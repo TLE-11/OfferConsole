@@ -1,5 +1,6 @@
 import type { UserProfile } from '../shared/types.ts';
 import { buildBasicInfoItems } from '../sidepanel/basicInfo.ts';
+import { isMissingInformationRecord } from '../shared/learnedFields.ts';
 
 const HOST_ID = 'job-applymate-info-overlay-host';
 const POSITION_KEY = 'jobApplyMateInfoOverlayPosition';
@@ -171,10 +172,10 @@ export function createInfoOverlayController(options: {
       return;
     }
 
-    for (const [sectionIndex, section] of buildSections(profile).entries()) {
+    for (const section of buildSections(profile)) {
       const details = document.createElement('details');
       details.className = 'section';
-      details.open = sectionIndex < 2;
+      details.open = true;
       const summary = document.createElement('summary');
       const fieldCount = section.groups.reduce((total, group) => total + group.fields.filter(field => field.value).length, 0);
       summary.innerHTML = `<span>${escapeHtml(section.title)}</span><span class="count">${fieldCount}</span>`;
@@ -303,7 +304,7 @@ export function createInfoOverlayController(options: {
   return controller;
 }
 
-function buildSections(profile: UserProfile): Section[] {
+export function buildSections(profile: UserProfile): Section[] {
   const recordFields = <T extends { id: string }>(
     prefix: string,
     records: T[],
@@ -318,7 +319,9 @@ function buildSections(profile: UserProfile): Section[] {
     })),
   }));
 
-  return [
+  const missingInformation = (profile.customInformation || []).filter(isMissingInformationRecord);
+  const customInformation = (profile.customInformation || []).filter(record => !isMissingInformationRecord(record));
+  const sections: Section[] = [
     {
       title: '基本信息',
       groups: [{ fields: buildBasicInfoItems(profile.personal).map(item => ({
@@ -365,15 +368,29 @@ function buildSections(profile: UserProfile): Section[] {
         ], (record, index) => record.name || `证书 ${index + 1}`),
       ],
     },
-    {
-      title: '自定义信息',
-      groups: [{ fields: (profile.customInformation || []).map((record, index) => ({
-        key: `custom-${record.id}`,
-        label: record.name.trim() || `自定义信息 ${index + 1}`,
+  ];
+
+  if (missingInformation.length > 0) {
+    sections.push({
+      title: '缺失信息填补',
+      groups: [{ fields: missingInformation.map((record, index) => ({
+        key: `missing-${record.id}`,
+        label: record.name.trim() || `缺失信息 ${index + 1}`,
         value: record.content.trim(),
       })) }],
-    },
-  ];
+    });
+  }
+
+  sections.push({
+    title: '自定义信息',
+    groups: [{ fields: customInformation.map((record, index) => ({
+      key: `custom-${record.id}`,
+      label: record.name.trim() || `自定义信息 ${index + 1}`,
+      value: record.content.trim(),
+    })) }],
+  });
+
+  return sections;
 }
 
 function escapeHtml(value: string): string {

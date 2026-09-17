@@ -46,6 +46,8 @@ const server = createServer((request, response) => {
       <label for="undergraduate-academic-degree">本科学位</label><input id="undergraduate-academic-degree" name="undergraduate_academic_degree">
     </fieldset>
     <label for="resume">上传简历</label><input id="resume" name="resume" type="file" accept=".pdf">
+    <div class="form-item"><label for="emergency-phone">紧急联系电话</label>
+      <input id="emergency-phone" name="emergency_phone" type="tel" required></div>
     <label for="intro">请介绍你自己</label><textarea id="intro" name="intro"></textarea>
     <div class="form-item"><label id="custom-label">自定义必答题</label>
       <input id="custom-primary" aria-labelledby="custom-label" aria-required="true">
@@ -203,7 +205,7 @@ try {
   const quickFill = await evaluate(serviceWorker.webSocketDebuggerUrl, `(async () => {
     await chrome.storage.local.set({ userProfile: {
       personal: { name: '测试用户', gender: '', birthDate: '', phone: '', email: 'smoke@example.com', currentAddress: '上海市' },
-      education: [{ school: '', college: '', major: '', degree: '本科', educationType: '', startDate: '', endDate: '', gpa: '' }], experience: [], projects: [], customInformation: [], skills: [], certifications: [],
+      education: [{ school: '', college: '', major: '', degree: '本科', educationType: '', startDate: '', endDate: '', gpa: '' }], experience: [], projects: [{ id: 'manual-project', name: '个人信息页项目', role: '负责人', startDate: '2025-01', endDate: '2025-06', description: '项目描述', achievements: '', technologies: '' }], customInformation: [{ id: 'learned-smoke-postcode', name: '家庭邮编', content: '100000' }], skills: [], certifications: [],
       resume: { fileName: '产品经理原名.pdf', fileData: 'data:application/pdf;base64,JVBERi0xLjQ=', fileType: 'pdf', uploadDate: '2026-09-07T00:00:00.000Z' },
       resumes: [
         { id: 'resume-product', category: '产品岗', fileName: '产品经理原名.pdf', fileData: 'data:application/pdf;base64,JVBERi0xLjQ=', fileType: 'pdf', uploadDate: '2026-09-07T00:00:00.000Z', parsedProfile: {
@@ -260,7 +262,7 @@ try {
     resumeName: document.querySelector('#resume')?.files?.[0]?.name || '',
     failureLabels: Array.from(document.querySelectorAll('[data-failure-review-label="true"]')).map(item => item.textContent)
   })`);
-  if (filledValues?.name !== '运营版用户' || filledValues?.email !== 'operations@example.com'
+  if (filledValues?.name !== '测试用户' || filledValues?.email !== 'smoke@example.com'
     || filledValues?.politicalStatus !== 'probationary' || filledValues?.politicalStatusText !== '中共预备党员'
     || filledValues?.degree !== '大学本科' || filledValues?.resumeName !== '运营岗位定制版.pdf'
     || filledValues?.graduateSchool !== '新疆大学' || filledValues?.graduateCollege !== '电气工程学院'
@@ -332,6 +334,8 @@ try {
   const overlayState = await evaluate(webSocketUrl, `(() => {
     const host = document.querySelector('#job-applymate-info-overlay-host');
     const button = host?.shadowRoot?.querySelector('[data-profile-key="personal-name"]');
+    const sections = Array.from(host?.shadowRoot?.querySelectorAll('.section') || []);
+    const missingSection = sections.find(section => section.querySelector('summary span')?.textContent === '缺失信息填补');
     const name = document.querySelector('#name');
     name.value = '';
     name.focus();
@@ -339,7 +343,11 @@ try {
     return {
       exists: Boolean(host && button),
       position: host ? getComputedStyle(host).position : '',
-      zIndex: host ? getComputedStyle(host).zIndex : ''
+      zIndex: host ? getComputedStyle(host).zIndex : '',
+      projectName: host?.shadowRoot?.querySelector('[data-profile-key="projects-manual-project-name"] .field-value')?.textContent || '',
+      projectSummary: Array.from(host?.shadowRoot?.querySelectorAll('.section summary') || []).find(summary => summary.querySelector('span')?.textContent === '项目经历')?.textContent || '',
+      missingInformationLabels: Array.from(missingSection?.querySelectorAll('.field-label') || []).map(item => item.textContent),
+      allSectionsOpen: Array.from(host?.shadowRoot?.querySelectorAll('.section') || []).every(section => section.open)
     };
   })()`);
   await new Promise(resolve => setTimeout(resolve, 1000));
@@ -351,7 +359,10 @@ try {
       activeElement: document.activeElement?.id || document.activeElement?.tagName || ''
     };
   })()`);
-  if (!overlayState?.exists || overlayState.position !== 'fixed' || overlayState.zIndex !== '2147483647' || overlayFilledName !== '产品版用户') {
+  if (!overlayState?.exists || overlayState.position !== 'fixed' || overlayState.zIndex !== '2147483647'
+    || overlayFilledName !== '测试用户' || overlayState.projectName !== '个人信息页项目'
+    || !overlayState.projectSummary.includes('5') || !overlayState.missingInformationLabels?.includes('家庭邮编')
+    || !overlayState.allSectionsOpen) {
     throw new Error(`网页内信息浮窗置顶或点击写入失败：${JSON.stringify({ overlayState, overlayFilledName, overlayFeedback })}`);
   }
   await evaluate(webSocketUrl, `(() => {
@@ -362,7 +373,7 @@ try {
   })()`);
   await new Promise(resolve => setTimeout(resolve, 1000));
   const iframeFilledCity = await evaluate(webSocketUrl, `document.querySelector('#application-frame')?.contentDocument?.querySelector('#city')?.value`);
-  if (iframeFilledCity !== '北京市') {
+  if (iframeFilledCity !== '上海市') {
     throw new Error(`信息浮窗未能写入子框架字段：${JSON.stringify(iframeFilledCity)}`);
   }
   const switchedOverlay = await evaluate(serviceWorker.webSocketDebuggerUrl, `(async () => {
@@ -376,7 +387,7 @@ try {
       name: shadow?.querySelector('[data-profile-key="personal-name"] .field-value')?.textContent || ''
     };
   })()`);
-  if (!switchedOverlay?.success || switchedOverlayState?.name !== '运营版用户' || !switchedOverlayState?.label.includes('运营岗')) {
+  if (!switchedOverlay?.success || switchedOverlayState?.name !== '测试用户' || !switchedOverlayState?.label.includes('运营岗')) {
     throw new Error(`信息浮窗未随简历选择切换：${JSON.stringify({ switchedOverlay, switchedOverlayState })}`);
   }
   const overlayRestored = await evaluate(webSocketUrl, `(async () => {
@@ -418,8 +429,40 @@ try {
       inputFontSize: input ? getComputedStyle(input).fontSize : ''
     };
   })()`);
-  if (review?.count !== 1 || review.labels?.[0] !== '自定义必答题' || !review.title.startsWith('1 项') || review.inputFontSize !== '13px') {
+  if (review?.count < 2 || !review.labels?.includes('自定义必答题')
+    || !review.labels?.includes('紧急联系电话')
+    || review.labels?.some(label => /unknown|请输入|请填写|请选择/i.test(label))
+    || review.inputFontSize !== '13px') {
     throw new Error(`失败复盘过滤或去重错误：${JSON.stringify(review)}`);
+  }
+  const answerSaved = await evaluate(webSocketUrl, `(async () => {
+    const shadow = document.querySelector('#job-applymate-failure-review')?.shadowRoot;
+    const row = Array.from(shadow?.querySelectorAll('[data-failure-review-item="true"]') || [])
+      .find(item => item.querySelector('[data-failure-review-label="true"]')?.textContent === '紧急联系电话');
+    const input = row?.querySelector('input,select');
+    const hint = row?.querySelector('textarea');
+    const remember = Array.from(row?.querySelectorAll('button') || []).find(button => button.textContent === '填写并记住');
+    if (!input || !hint || !remember) return false;
+    input.value = '13800001111';
+    hint.value = '这是紧急联系人的电话，不是候选人本人的联系电话';
+    remember.click();
+    await new Promise(resolve => setTimeout(resolve, 500));
+    return document.querySelector('#emergency-phone')?.value === '13800001111';
+  })()`);
+  const learnedEmergency = await evaluate(serviceWorker.webSocketDebuggerUrl, `(async () => {
+    const stored = await chrome.storage.local.get(['userProfile', 'settings']);
+    const custom = stored.userProfile?.customInformation?.find(item => item.name === '紧急联系电话');
+    const learned = Object.values(stored.settings?.learnedFieldValues?.['127.0.0.1'] || {})
+      .find(item => item.label === '紧急联系电话');
+    return {
+      customValue: custom?.content || '',
+      learnedValue: learned?.value || '',
+      hasRule: String(stored.settings?.fieldRecognitionRules || '').includes('这是紧急联系人的电话，不是候选人本人的联系电话')
+    };
+  })()`);
+  if (!answerSaved || learnedEmergency?.customValue !== '13800001111'
+    || learnedEmergency?.learnedValue !== '13800001111' || !learnedEmergency?.hasRule) {
+    throw new Error(`缺失信息学习未完整保存：${JSON.stringify({ answerSaved, learnedEmergency })}`);
   }
   console.log('✓ content.js 在真实浏览器表单页中成功初始化');
   console.log(`✓ 真实浏览器识别到 ${detection.data.count} 个可填字段`);
@@ -431,9 +474,14 @@ try {
   console.log('✓ 可按分类选择指定简历上传，也可明确选择本次不上传');
   console.log('✓ 网页内信息浮窗固定在最高层级，可写入主页面和子框架字段，被移除后会自动恢复');
   console.log('✓ content.js 即使重复注入，悬浮窗也只有一个实例且关闭一次即可隐藏');
-  console.log('✓ 切换简历会同步切换悬浮窗和自动填写资料');
+  console.log('✓ 切换简历时公共个人信息保持与设置页同步，简历分类与经历仍正确切换');
+  console.log('✓ 简历未解析出项目时，悬浮窗会显示个人信息页保存的项目经历');
+  console.log('✓ 信息悬浮窗默认展开全部栏目');
   console.log('✓ 失败复盘窗口不会继承招聘网站的大字号样式');
-  console.log('✓ 失败复盘会过滤辅助输入框，并把同一逻辑字段去重为 1 项');
+  console.log('✓ 失败复盘会过滤辅助输入框，并对同一逻辑字段去重显示');
+  console.log('✓ 紧急联系电话不会误用本人手机号，补填答案会同时保存到个人资料和网站学习记录');
+  console.log('✓ 失败窗口中的 AI 识别纠错会写入 Markdown Skill');
+  console.log('✓ 内部英文字段键显示为中文，自动学习条目在悬浮窗中单独归入“缺失信息填补”');
   runtimeDiagnostics.close();
 } finally {
   if (process.platform === 'win32' && browser.pid) {

@@ -46,6 +46,15 @@ test('提取无标签的个人信息', () => {
   assert.equal(personal.email, 'zhangming@example.com');
 });
 
+test('同一行的出生日期和电话会分别提取', () => {
+  const personal = NLPHelper.extractLabeledFields(
+    '出生日期：2002.9 电话：17684515539\n邮箱：candidate@example.com',
+  );
+  assert.equal(personal.birthDate, '2002-09');
+  assert.equal(personal.phone, '17684515539');
+  assert.equal(personal.email, 'candidate@example.com');
+});
+
 test('政治面貌不会被当成姓名', () => {
   const personal = NLPHelper.parseResumeText(RESUME).personal!;
   assert.notEqual(personal.name, '中共党员');

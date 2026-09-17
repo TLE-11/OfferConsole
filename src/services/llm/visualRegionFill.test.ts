@@ -6,7 +6,11 @@ import type {
   VisualRegionFillResult,
   UserProfile,
 } from '../../shared/types.ts';
-import { buildVisualRegionFillPrompt } from './prompts.ts';
+import {
+  buildFieldMatchingPrompt,
+  buildSectionFillPrompt,
+  buildVisualRegionFillPrompt,
+} from './prompts.ts';
 import {
   parseVisualRegionFillResponse,
   validateVisualRegionMappings,
@@ -61,15 +65,41 @@ function createProfile(): UserProfile {
 }
 
 test('视觉补填 prompt 包含图片 block 与只允许输出已有 controlId 的规则', () => {
-  const prompt = buildVisualRegionFillPrompt(createPayload(), createProfile());
+  const prompt = buildVisualRegionFillPrompt(
+    createPayload(),
+    createProfile(),
+    '# 用户规则\n- 紧急联系电话不是本人电话',
+  );
 
   assert.match(prompt.system, /只能输出已有 controlId/);
+  assert.match(prompt.system, /紧急联系电话不是本人电话/);
   assert.equal(prompt.userParts.length, 2);
   assert.deepEqual(prompt.userParts[1], {
     type: 'image',
     mimeType: 'image/png',
     data: 'ZmFrZQ==',
   });
+});
+
+test('整页 AI 补填和字段分类都会读取 Markdown 识别 Skill', () => {
+  const rules = '# 用户规则\n- 字段“备用号码”表示紧急联系人的电话';
+  const sectionPrompt = buildSectionFillPrompt({
+    requestId: 'req-1',
+    section: 'personal',
+    domain: 'jobs.example.com',
+    fields: [{
+      index: 0, rowIndex: 0, name: 'backup_phone', label: '备用号码',
+      type: 'text', options: [], context: '联系人信息',
+    }],
+  }, createProfile(), rules);
+  const matchingPrompt = buildFieldMatchingPrompt([{
+    index: 0, name: 'backup_phone', id: '', placeholder: '',
+    labelText: '备用号码', type: 'text',
+  }], rules);
+
+  assert.match(sectionPrompt.system, /备用号码/);
+  assert.match(sectionPrompt.system, /第三方字段必须返回空字符串/);
+  assert.match(matchingPrompt.system, /备用号码/);
 });
 
 test('视觉补填 prompt 不允许无图输入', () => {

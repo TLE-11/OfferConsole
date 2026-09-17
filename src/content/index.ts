@@ -14,6 +14,8 @@ import { extractApplicationPageMetadata } from './applicationRecordMetadata.ts';
 import { createVisualRegionFillController } from './visualRegionFill.ts';
 import { createInfoOverlayController } from './infoOverlay.ts';
 import { runProgressiveFill } from './progressiveFill.ts';
+import { findCustomInformationValue } from '../shared/learnedFields.ts';
+import { getChineseFieldLabel } from '../shared/fieldLabels.ts';
 import { buildProfileForResume, resolveResumeSelection } from '../shared/resumes.ts';
 import type {
   DetectedField,
@@ -227,7 +229,8 @@ async function handleAIPageFill(resumeId?: string | null) {
 
     const learnedFillItems = scannedFields.flatMap(field => {
       const learned = learnedValues[formFiller.getFieldSignature(field.element)];
-      const value = formFiller.getLearnedValue(learned, fillProfile);
+      const value = formFiller.getLearnedValue(learned, fillProfile)
+        || findCustomInformationValue(fillProfile.customInformation, field.label);
       return value ? [{ element: field.element, value }] : [];
     });
     if (learnedFillItems.length > 0) {
@@ -339,9 +342,14 @@ async function fillSection(
     const learnedUnmatchedItems = formDetector.getUnmatchedFields()
       .filter(({ element }) => section === 'all' || getElementSection(element) === section)
       .filter(({ element }) => !getControlValue(element) && isLikelyApplicationControl(element))
-      .flatMap(({ element }) => {
+      .flatMap((unmatched) => {
+        const { element } = unmatched;
         const learned = learnedValues[formFiller.getFieldSignature(element)];
-        const value = formFiller.getLearnedValue(learned, fillProfile);
+        const value = formFiller.getLearnedValue(learned, fillProfile)
+          || findCustomInformationValue(
+            fillProfile.customInformation,
+            getUnmatchedFieldLabel(unmatched),
+          );
         return value ? [{ element, value }] : [];
       });
     const learnedUnmatchedCount = await formFiller.fillElementValues(learnedUnmatchedItems);
@@ -569,7 +577,9 @@ function collectUnresolvedReviewCandidates(
   for (const item of items) {
     const { element } = item;
     if (!element.isConnected || element.disabled || getControlValue(element)) continue;
-    if (!isLikelyApplicationControl(element) || !isRequiredReviewControl(element)) continue;
+    // 失败复盘关注所有有明确问题名称的网申字段，不再只依赖 required 标记。
+    // 很多招聘系统会在提交时才校验必填，DOM 中并没有 required 属性。
+    if (!isLikelyApplicationControl(element)) continue;
 
     const label = getMeaningfulReviewLabel(element, item.preferredLabel);
     if (!label) continue;
@@ -595,17 +605,6 @@ function getReviewControlContainer(
   return element.closest(
     '[data-form-field-id], [data-form-field-name], [data-form-field-i18n-name], [class*=applyFormItem], [class*=formItem], [class*=form-item]'
   ) || element;
-}
-
-function isRequiredReviewControl(
-  element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement,
-): boolean {
-  if (element.required || element.getAttribute('aria-required') === 'true') return true;
-  const container = getReviewControlContainer(element);
-  if (container.getAttribute('aria-required') === 'true') return true;
-  return Boolean(container.querySelector(
-    '[aria-required="true"], .ant-form-item-required, [class*=required], [class*=isRequired]'
-  ));
 }
 
 function getMeaningfulReviewLabel(
@@ -635,7 +634,16 @@ function getMeaningfulReviewLabel(
     if (/^(?:unknown|未知|未识别字段|请输入|请填写|请选择|输入|选择|search|搜索|please\s+(?:enter|input|select|choose))$/i.test(label)) {
       continue;
     }
-    return label;
+    const matchedType = FieldMatcher.matchFieldType(
+      identifiers.name,
+      identifiers.id,
+      identifiers.placeholder,
+      identifiers.labelText,
+      identifiers.type,
+      identifiers.autocomplete,
+      identifiers.contextText,
+    ).fieldType;
+    return getChineseFieldLabel(label, matchedType);
   }
   return '';
 }
@@ -923,12 +931,12 @@ function showFailureReview(failures: FillFailure[]): void {
       font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
     }
     *, *::before, *::after { box-sizing: border-box !important; }
-    section, div, strong, span, button, input, select {
+    section, div, strong, span, button, input, select, textarea {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
       text-transform: none !important;
       letter-spacing: normal !important;
     }
-    button, input, select { font-size: 13px !important; line-height: 1.4 !important; }
+    button, input, select, textarea { font-size: 13px !important; line-height: 1.4 !important; }
   `;
   const panel = document.createElement('section');
   const header = document.createElement('div');
@@ -939,7 +947,7 @@ function showFailureReview(failures: FillFailure[]): void {
   panel.style.cssText = 'width:100%;max-height:min(680px,calc(100vh - 36px));display:flex;flex-direction:column;overflow:hidden;border:1px solid #9fded0;border-radius:18px 18px 18px 6px;background:#f8fffd;color:#0b2630;box-shadow:0 24px 70px rgba(7,59,76,.28);font:13px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;';
   header.style.cssText = 'padding:16px 18px 14px;background:linear-gradient(135deg,#073b4c,#0f766e);color:#fff;';
   title.style.cssText = 'display:block;font-size:16px;line-height:1.3;';
-  subtitle.textContent = '可以修正后填写并记住，也可以跳过本次。';
+  subtitle.textContent = '补充缺失答案后会保存，下次优先填写；也可以纠正 AI 的字段理解。';
   subtitle.style.cssText = 'display:block;margin-top:5px;color:rgba(255,255,255,.72);font-size:12px;';
   list.style.cssText = 'display:grid;gap:10px;padding:12px;overflow:auto;';
   skipAll.type = 'button';
@@ -957,6 +965,7 @@ function showFailureReview(failures: FillFailure[]): void {
   for (const failure of failures) {
     const row = document.createElement('div');
     const label = document.createElement('div');
+    const reason = document.createElement('div');
     const options = formFiller.getCorrectionOptions(failure.element);
     const input = options.length > 0
       ? document.createElement('select')
@@ -964,12 +973,19 @@ function showFailureReview(failures: FillFailure[]): void {
     const actions = document.createElement('div');
     const remember = document.createElement('button');
     const skip = document.createElement('button');
+    const ruleLabel = document.createElement('div');
+    const ruleInput = document.createElement('textarea');
+    const saveHint = document.createElement('button');
     const feedback = document.createElement('div');
     row.dataset.failureReviewItem = 'true';
     label.dataset.failureReviewLabel = 'true';
     row.style.cssText = 'padding:12px;border:1px solid #d5e6e1;border-radius:12px;background:#fff;';
     label.textContent = failure.label || failure.fieldType;
     label.style.cssText = 'margin-bottom:7px;font-weight:700;color:#163b43;';
+    reason.textContent = failure.attemptedValue
+      ? `已尝试“${failure.attemptedValue.slice(0, 80)}”，但网页没有接受。`
+      : '个人资料中没有找到这个问题的答案，请补充。';
+    reason.style.cssText = 'margin:-2px 0 8px;color:#607477;font-size:12px;';
     if (input instanceof HTMLSelectElement) {
       const placeholder = document.createElement('option');
       placeholder.value = '';
@@ -984,7 +1000,7 @@ function showFailureReview(failures: FillFailure[]): void {
       input.value = options.includes(failure.attemptedValue) ? failure.attemptedValue : '';
     } else {
       input.value = failure.attemptedValue;
-      input.placeholder = '输入网站接受的值';
+      input.placeholder = `请输入“${failure.label || '该字段'}”的答案`;
       const sourceType = failure.element instanceof HTMLInputElement ? failure.element.type : '';
       input.type = sourceType === 'date' || sourceType === 'month' ? sourceType : 'text';
     }
@@ -997,6 +1013,14 @@ function showFailureReview(failures: FillFailure[]): void {
     skip.textContent = '本次不填';
     skip.style.cssText = 'min-height:34px;padding:0 12px;border:1px solid #d5e6e1;border-radius:9px;background:#f6faf9;color:#607477;font-weight:650;cursor:pointer;';
     feedback.style.cssText = 'min-height:0;margin-top:0;color:#c2410c;font-size:12px;';
+    ruleLabel.textContent = 'AI 识别纠错（可选）';
+    ruleLabel.style.cssText = 'margin-top:10px;color:#375a60;font-size:12px;font-weight:650;';
+    ruleInput.rows = 2;
+    ruleInput.placeholder = '例如：这是紧急联系人的电话，不是候选人本人的联系电话';
+    ruleInput.style.cssText = 'width:100%;margin-top:5px;padding:7px 9px;box-sizing:border-box;border:1px solid #d5e6e1;border-radius:8px;background:#fbfefd;color:#0b2630;resize:vertical;outline:none;';
+    saveHint.type = 'button';
+    saveHint.textContent = '只保存识别纠错';
+    saveHint.style.cssText = 'margin-top:6px;min-height:30px;padding:0 10px;border:1px solid #9fcfc5;border-radius:8px;background:#eefaf7;color:#0f766e;font-weight:650;cursor:pointer;';
 
     const removeRow = () => {
       row.remove();
@@ -1004,6 +1028,32 @@ function showFailureReview(failures: FillFailure[]): void {
       updateTitle();
     };
     skip.onclick = removeRow;
+    saveHint.onclick = async () => {
+      const hint = ruleInput.value.trim();
+      if (!hint) {
+        feedback.textContent = '请先写下要告诉 AI 的识别规则';
+        feedback.style.marginTop = '7px';
+        return;
+      }
+      saveHint.disabled = true;
+      saveHint.textContent = '正在保存...';
+      const saved = await sendRuntimeMessage({
+        type: 'SAVE_FIELD_RECOGNITION_HINT',
+        payload: {
+          domain: window.location.hostname,
+          signature: failure.signature,
+          label: failure.label,
+          hint,
+        },
+      });
+      feedback.style.marginTop = '7px';
+      feedback.style.color = saved.success ? '#0f766e' : '#c2410c';
+      feedback.textContent = saved.success
+        ? '识别纠错已写入 AI 字段识别 Skill'
+        : saved.error || '识别纠错保存失败';
+      saveHint.disabled = false;
+      saveHint.textContent = saved.success ? '识别纠错已保存' : '重新保存识别纠错';
+    };
     remember.onclick = async () => {
       const value = input.value.trim();
       if (!value) {
@@ -1029,8 +1079,13 @@ function showFailureReview(failures: FillFailure[]): void {
             signature: failure.signature,
             label: failure.label,
             value,
+            fieldType: failure.fieldType,
             updatedAt: new Date().toISOString(),
           },
+          // attemptedValue 为空说明资料中原本没有答案；同时写回个人资料，
+          // 让其它网站和后续 AI 请求也能复用，而不只绑定当前字段签名。
+          saveAsProfileInformation: !failure.attemptedValue,
+          recognitionHint: ruleInput.value.trim() || undefined,
         },
       });
       if (!saved.success) {
@@ -1043,7 +1098,7 @@ function showFailureReview(failures: FillFailure[]): void {
       removeRow();
     };
     actions.append(remember, skip);
-    row.append(label, input, actions, feedback);
+    row.append(label, reason, input, actions, ruleLabel, ruleInput, saveHint, feedback);
     list.append(row);
   }
 

@@ -9,3 +9,23 @@ export function normalizePoliticalStatusValue(value?: string): string {
   if (/群众/.test(text)) return '群众';
   return text;
 }
+
+/**
+ * 统一出生日期格式，并丢弃同一行中被误并入的电话等后续字段。
+ * 无法识别为日期时保留原值，避免破坏用户自定义的特殊写法。
+ */
+export function normalizeBirthDateValue(value?: string): string {
+  const text = String(value || '').trim();
+  if (!text) return '';
+
+  const date = text.match(
+    /(?<!\d)((?:19|20)\d{2})\s*(?:年|[.\-/])\s*(0?[1-9]|1[0-2])(?:\s*(?:月|[.\-/])\s*(0?[1-9]|[12]\d|3[01])\s*日?)?(?!\d)/,
+  );
+  if (date) {
+    const normalized = `${date[1]}-${date[2].padStart(2, '0')}`;
+    return date[3] ? `${normalized}-${date[3].padStart(2, '0')}` : normalized;
+  }
+
+  const year = text.match(/(?<!\d)((?:19|20)\d{2})\s*年?(?!\d)/);
+  return year ? year[1] : text;
+}

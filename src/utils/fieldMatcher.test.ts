@@ -14,6 +14,17 @@ test('字段匹配使用词边界，避免通用 id/job/contact 子串误判', (
   assert.equal(match('valid_from'), FieldType.UNKNOWN);
 });
 
+test('紧急联系人字段不会套用候选人本人的姓名或电话', () => {
+  const emergencyPhone = FieldMatcher.matchFieldType(
+    'emergency_phone', '', '', '紧急联系电话', 'tel', '', '紧急联系人信息',
+  );
+  const emergencyName = FieldMatcher.matchFieldType(
+    'contact_name', '', '', '紧急联系人姓名', 'text', 'name', '紧急联系人信息',
+  );
+  assert.equal(emergencyPhone.fieldType, FieldType.UNKNOWN);
+  assert.equal(emergencyName.fieldType, FieldType.UNKNOWN);
+});
+
 test('学校、学院与学历不再互相覆盖', () => {
   assert.equal(match('college'), FieldType.COLLEGE);
   assert.equal(match('school'), FieldType.SCHOOL);

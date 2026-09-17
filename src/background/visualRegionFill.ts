@@ -15,6 +15,7 @@ import type {
   VisualRegionImagePayload,
   VisualRegionSelectionRect,
 } from '../shared/types.ts';
+import { getFieldRecognitionRules } from '../shared/fieldRecognitionRules.ts';
 
 export interface DOMRectLike {
   x?: number;
@@ -89,7 +90,12 @@ export async function handleVisualRegionFill(
       return { success: false, error: '请先保存个人资料' };
     }
 
-    const { system, userParts } = buildVisualRegionFillPrompt(payload, profile);
+    const settings = await StorageService.getSettings();
+    const { system, userParts } = buildVisualRegionFillPrompt(
+      payload,
+      profile,
+      getFieldRecognitionRules(settings),
+    );
     const llm = deps.createLLM(config);
     throwIfAborted(signal);
     const result = await llm.chat([

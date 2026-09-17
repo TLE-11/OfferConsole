@@ -10,6 +10,7 @@ import {
   splitMultiDropdownValue,
 } from '../utils/dropdownOption';
 import { FieldMatcher } from '../utils/fieldMatcher';
+import { getChineseFieldLabel } from '../shared/fieldLabels.ts';
 import {
   getChoiceGroup,
   getChoiceLabel,
@@ -258,7 +259,9 @@ export class FormFiller {
           } else {
             this.recordFailure(field.element, value, fieldType);
           }
-        } else if (field.element.required || field.element.getAttribute('aria-required') === 'true') {
+        } else {
+          // 已经识别出字段语义、但候选人资料中没有答案时也进入补填窗口；
+          // 不再只处理 required，避免可见但未标必填的网申字段被静默遗漏。
           this.recordFailure(field.element, '', fieldType);
         }
       } catch (error) {
@@ -372,7 +375,7 @@ export class FormFiller {
       element,
       signature: this.getFieldSignature(element),
       fieldType,
-      label: (label || fieldType).replace(/\s+/g, ' ').trim().slice(0, 160),
+      label: getChineseFieldLabel(label || fieldType, fieldType),
       attemptedValue,
     });
   }

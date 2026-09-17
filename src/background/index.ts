@@ -46,9 +46,15 @@ import {
 import { findBestDropdownOptionIndex } from '../utils/dropdownOption.ts';
 import {
   getLearnedFieldsForDomain,
+  saveLearnedValueToProfile,
   updateLearnedFieldStore,
   type LearnedFieldStore,
 } from '../shared/learnedFields.ts';
+import {
+  DEFAULT_FIELD_RECOGNITION_RULES_MD,
+  getFieldRecognitionRules,
+  upsertFieldRecognitionHint,
+} from '../shared/fieldRecognitionRules.ts';
 import {
   handleCreateApplicationRecord,
   handleCreateApplicationRecordDraft,
@@ -96,27 +102,98 @@ async function handleGetLearnedFieldValues(domain: string): Promise<MessageRespo
 async function handleSaveLearnedFieldValue(
   domain: string,
   entry: LearnedFieldValue,
+  options: { saveAsProfileInformation?: boolean; recognitionHint?: string } = {},
 ): Promise<MessageResponse> {
   const normalizedDomain = domain.trim().toLowerCase();
   if (!normalizedDomain || !entry.signature.trim() || !entry.value.trim()) {
     return { success: false, error: '学习字段信息不完整' };
   }
-  const [settingsValue, profile] = await Promise.all([
+  const [settingsValue, storedProfile] = await Promise.all([
     StorageService.getSettings(),
     StorageService.getUserProfile(),
   ]);
   const settings = settingsValue || {};
+  let profile = storedProfile;
+  let savedProfilePath = entry.profilePath;
+
+  if (options.saveAsProfileInformation && profile) {
+    const saved = saveLearnedValueToProfile(
+      profile,
+      entry.fieldType,
+      entry.label,
+      entry.value.slice(0, 4000),
+    );
+    if (!await StorageService.saveUserProfile(saved.profile)) {
+      return { success: false, error: '答案已写入网页，但保存到个人资料失败' };
+    }
+    profile = saved.profile;
+    savedProfilePath = saved.profilePath;
+  }
+
   const store = (settings.learnedFieldValues || {}) as LearnedFieldStore;
   const nextStore = updateLearnedFieldStore(store, normalizedDomain, {
     signature: entry.signature,
     label: entry.label.slice(0, 160),
     value: entry.value.slice(0, 4000),
-    profilePath: entry.profilePath || inferProfilePath(profile, entry.value),
+    fieldType: entry.fieldType,
+    profilePath: savedProfilePath || inferProfilePath(profile, entry.value),
     updatedAt: entry.updatedAt,
   });
-  await StorageService.saveSettings({ ...settings, learnedFieldValues: nextStore });
+  const recognitionHint = options.recognitionHint?.trim();
+  const fieldRecognitionRules = recognitionHint
+    ? upsertFieldRecognitionHint(
+        getFieldRecognitionRules(settings),
+        normalizedDomain,
+        entry.signature,
+        entry.label,
+        recognitionHint,
+      )
+    : settings.fieldRecognitionRules;
+  await StorageService.saveSettings({
+    ...settings,
+    learnedFieldValues: nextStore,
+    ...(typeof fieldRecognitionRules === 'string' ? { fieldRecognitionRules } : {}),
+  });
   await queueAutoSync('learned-field-value');
-  return { success: true };
+  return {
+    success: true,
+    data: { savedToProfile: Boolean(options.saveAsProfileInformation && profile), savedProfilePath },
+  };
+}
+
+async function handleGetFieldRecognitionRules(): Promise<MessageResponse<{ markdown: string }>> {
+  const settings = await StorageService.getSettings();
+  return { success: true, data: { markdown: getFieldRecognitionRules(settings) } };
+}
+
+async function handleSaveFieldRecognitionRules(markdown: string): Promise<MessageResponse> {
+  const settings = await StorageService.getSettings() || {};
+  const normalized = markdown.trim().slice(0, 20_000) || DEFAULT_FIELD_RECOGNITION_RULES_MD;
+  await StorageService.saveSettings({ ...settings, fieldRecognitionRules: normalized });
+  await queueAutoSync('field-recognition-rules');
+  return { success: true, data: { markdown: normalized } };
+}
+
+async function handleSaveFieldRecognitionHint(payload: {
+  domain: string;
+  signature: string;
+  label: string;
+  hint: string;
+}): Promise<MessageResponse> {
+  if (!payload.domain.trim() || !payload.signature.trim() || !payload.hint.trim()) {
+    return { success: false, error: '请先填写要告诉 AI 的识别纠错' };
+  }
+  const settings = await StorageService.getSettings() || {};
+  const markdown = upsertFieldRecognitionHint(
+    getFieldRecognitionRules(settings),
+    payload.domain,
+    payload.signature,
+    payload.label,
+    payload.hint,
+  );
+  await StorageService.saveSettings({ ...settings, fieldRecognitionRules: markdown });
+  await queueAutoSync('field-recognition-hint');
+  return { success: true, data: { markdown } };
 }
 
 function inferProfilePath(profile: UserProfile | null, expected: string): string | undefined {
@@ -182,7 +259,19 @@ export async function handleMessage(
       return await handleGetLearnedFieldValues(message.payload.domain);
 
     case 'SAVE_LEARNED_FIELD_VALUE':
-      return await handleSaveLearnedFieldValue(message.payload.domain, message.payload.entry);
+      return await handleSaveLearnedFieldValue(message.payload.domain, message.payload.entry, {
+        saveAsProfileInformation: message.payload.saveAsProfileInformation,
+        recognitionHint: message.payload.recognitionHint,
+      });
+
+    case 'GET_FIELD_RECOGNITION_RULES':
+      return await handleGetFieldRecognitionRules();
+
+    case 'SAVE_FIELD_RECOGNITION_RULES':
+      return await handleSaveFieldRecognitionRules(message.payload.markdown);
+
+    case 'SAVE_FIELD_RECOGNITION_HINT':
+      return await handleSaveFieldRecognitionHint(message.payload);
 
     case 'PARSE_RESUME':
       return await handleParseResume(
@@ -433,11 +522,15 @@ async function handleAIFillSection(
       return { success: false, error: '请先在设置中配置 AI 服务' };
     }
 
-    const storedProfile = await StorageService.getUserProfile();
+    const [storedProfile, settings] = await Promise.all([
+      StorageService.getUserProfile(),
+      StorageService.getSettings(),
+    ]);
     if (!storedProfile) {
       return { success: false, error: '请先保存个人资料' };
     }
     const profile = buildProfileForResume(storedProfile, payload.resumeId);
+    const recognitionRules = getFieldRecognitionRules(settings);
 
     const cacheField = payload.fields.length === 1 ? payload.fields[0] : null;
     const cacheKey = cacheField
@@ -445,6 +538,7 @@ async function handleAIFillSection(
           payload.domain,
           cacheField,
           getAIFillProfileFingerprint(profile),
+          recognitionRules,
         )
       : '';
     if (cacheKey && cacheField) {
@@ -463,7 +557,7 @@ async function handleAIFillSection(
     }
 
     const llm = new LLMService(config);
-    const { system, user } = buildSectionFillPrompt(payload, profile);
+    const { system, user } = buildSectionFillPrompt(payload, profile, recognitionRules);
     timeoutId = setTimeout(() => {
       timedOut = true;
       controller.abort();
@@ -901,7 +995,15 @@ async function handleMatchFieldsLLM(
   payload: { fields: Array<{ index: number; name: string; id: string; placeholder: string; labelText: string; type: string; contextText?: string }>; domain: string }
 ): Promise<MessageResponse> {
   try {
-    const cacheKey = buildFieldMatchingCacheKey(payload.domain, payload.fields);
+    const [config, settings] = await Promise.all([
+      StorageService.getLLMConfig(),
+      StorageService.getSettings(),
+    ]);
+    if (!config?.apiKey) {
+      return { success: false, error: 'LLM not configured' };
+    }
+    const recognitionRules = getFieldRecognitionRules(settings);
+    const cacheKey = buildFieldMatchingCacheKey(payload.domain, payload.fields, recognitionRules);
     const cached = await chrome.storage.local.get(cacheKey);
     if (cached[cacheKey]) {
       const cachedResult = cached[cacheKey] as Record<string, string>;
@@ -911,13 +1013,8 @@ async function handleMatchFieldsLLM(
       }
     }
 
-    const config = await StorageService.getLLMConfig();
-    if (!config?.apiKey) {
-      return { success: false, error: 'LLM not configured' };
-    }
-
     const llm = new LLMService(config);
-    const { system, user } = buildFieldMatchingPrompt(payload.fields);
+    const { system, user } = buildFieldMatchingPrompt(payload.fields, recognitionRules);
 
     const result = await llm.chat([
       { role: 'system', content: system },

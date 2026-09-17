@@ -5,6 +5,7 @@ import type {
   ExperienceInfo,
   ProjectInfo,
 } from '../shared/types';
+import { normalizeBirthDateValue, normalizePoliticalStatusValue } from '../shared/personal.ts';
 
 /** 简历章节类型 */
 export type SectionKind =
@@ -457,41 +458,56 @@ export class NLPHelper {
   static extractLabeledFields(text: string): Partial<PersonalInfo> {
     const result: Partial<PersonalInfo> = {};
 
-    // 标签别名 -> PersonalInfo 字段
-    const labelMap: Array<[RegExp, keyof PersonalInfo]> = [
-      [/(?:政治面貌|政治状态|党派|状态)/, 'politicalStatus'],
-      [/(?:出生日期|出生年月|生日|生年月日)/, 'birthDate'],
-      [/(?:性别)/, 'gender'],
-      [/(?:民族)/, 'ethnicity'],
-      [/(?:籍贯|户籍|户口所在地)/, 'hometown'],
-      [/(?:现居地|现居住地|所在地|居住地|现住址)/, 'currentAddress'],
-      [/(?:微信|微信号|WeChat)/i, 'wechat'],
-      [/(?:身份证号?码?|身份证)/, 'idCard'],
-      [/(?:姓名|名字)/, 'name'],
+    // 明确列出标签，便于一行中连续出现多个“标签: 值”时逐项切开。
+    const labelMap: Array<[string, keyof PersonalInfo]> = [
+      ['政治面貌', 'politicalStatus'], ['政治状态', 'politicalStatus'],
+      ['党派', 'politicalStatus'], ['状态', 'politicalStatus'],
+      ['出生日期', 'birthDate'], ['出生年月', 'birthDate'],
+      ['生年月日', 'birthDate'], ['生日', 'birthDate'],
+      ['手机号码', 'phone'], ['手机号', 'phone'],
+      ['联系电话', 'phone'], ['电话', 'phone'],
+      ['电子邮箱', 'email'], ['E-mail', 'email'], ['Email', 'email'], ['邮箱', 'email'],
+      ['性别', 'gender'], ['民族', 'ethnicity'],
+      ['户口所在地', 'hometown'], ['籍贯', 'hometown'], ['户籍', 'hometown'],
+      ['现居住地', 'currentAddress'], ['现居地', 'currentAddress'],
+      ['现住址', 'currentAddress'], ['所在地', 'currentAddress'], ['居住地', 'currentAddress'],
+      ['微信号', 'wechat'], ['WeChat', 'wechat'], ['微信', 'wechat'],
+      ['身份证号码', 'idCard'], ['身份证号', 'idCard'], ['身份证', 'idCard'],
+      ['姓名', 'name'], ['名字', 'name'],
     ];
+    const labels = [...new Set(labelMap.map(([label]) => label))]
+      .sort((a, b) => b.length - a.length)
+      .map(label => label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+      .join('|');
+    const markerPattern = new RegExp(`(${labels})\\s*[:：]`, 'gi');
 
     for (const rawLine of text.split('\n')) {
       // 去掉 Markdown 列表符号与多余空白
       const line = rawLine.replace(/^[\s\-*•]+/, '').trim();
       if (!line) continue;
 
-      const match = line.match(/^([^:：]{1,10})[:：]\s*(.+)$/);
-      if (!match) continue;
+      const markers = [...line.matchAll(markerPattern)];
+      for (let index = 0; index < markers.length; index += 1) {
+        const marker = markers[index];
+        const label = marker[1];
+        const start = (marker.index || 0) + marker[0].length;
+        const end = markers[index + 1]?.index ?? line.length;
+        let value = line.slice(start, end).trim();
+        const field = labelMap.find(([alias]) => alias.toLowerCase() === label.toLowerCase())?.[1];
+        if (!field || !value || value.length > 60 || result[field]) continue;
 
-      const label = match[1].trim();
-      const value = match[2].trim();
-      if (!value || value.length > 60) continue;
-
-      for (const [pattern, field] of labelMap) {
-        if (pattern.test(label) && !result[field]) {
-          // 「状态」只在值确实是政治面貌时才采纳，避免误收「在职」等
-          if (field === 'politicalStatus' && /^状态$/.test(label)
-              && !/(党员|团员|群众|民主党派)/.test(value)) {
-            break;
-          }
-          result[field] = value;
-          break;
+        // 「状态」只在值确实是政治面貌时才采纳，避免误收「在职」等。
+        if (field === 'politicalStatus') {
+          if (/^状态$/i.test(label) && !/(党员|团员|群众|民主党派|无党派)/.test(value)) continue;
+          value = normalizePoliticalStatusValue(value);
+        } else if (field === 'birthDate') {
+          value = normalizeBirthDateValue(value);
+        } else if (field === 'phone') {
+          value = value.match(/(?<!\d)(?:\+?86[-\s]?)?(1[3-9]\d{9})(?!\d)/)?.[1] || value;
+        } else if (field === 'email') {
+          value = value.match(/[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}/)?.[0] || value;
         }
+        result[field] = value;
       }
     }
 

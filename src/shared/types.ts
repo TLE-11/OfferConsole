@@ -110,6 +110,8 @@ export interface LearnedFieldValue {
   signature: string;
   label: string;
   value: string;
+  /** 当地规则识别出的字段类型；unknown 表示需依靠标签或 AI 规则。 */
+  fieldType?: string;
   profilePath?: string;
   updatedAt: string;
 }
@@ -339,7 +341,21 @@ export type Message =
   | { type: 'SET_INFO_OVERLAY_RESUME'; payload: { resumeId?: string | null } }
   | { type: 'ENSURE_CONTENT_SCRIPT'; payload: { tabId: number } }
   | { type: 'GET_LEARNED_FIELD_VALUES'; payload: { domain: string } }
-  | { type: 'SAVE_LEARNED_FIELD_VALUE'; payload: { domain: string; entry: LearnedFieldValue } }
+  | {
+      type: 'SAVE_LEARNED_FIELD_VALUE';
+      payload: {
+        domain: string;
+        entry: LearnedFieldValue;
+        saveAsProfileInformation?: boolean;
+        recognitionHint?: string;
+      };
+    }
+  | { type: 'GET_FIELD_RECOGNITION_RULES'; payload?: null }
+  | { type: 'SAVE_FIELD_RECOGNITION_RULES'; payload: { markdown: string } }
+  | {
+      type: 'SAVE_FIELD_RECOGNITION_HINT';
+      payload: { domain: string; signature: string; label: string; hint: string };
+    }
   | { type: 'GET_APPLICATION_PAGE_METADATA'; payload?: null }
   | { type: 'CREATE_APPLICATION_RECORD_DRAFT'; payload: { tabId: number } }
   | { type: 'GET_APPLICATION_RECORD_DRAFT'; payload: { draftId: string } }

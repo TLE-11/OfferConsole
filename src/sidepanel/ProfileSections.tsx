@@ -8,6 +8,7 @@ import type {
 } from '../shared/types.ts';
 import { BasicInformationSection } from './BasicInformationSection.tsx';
 import { SectionSummary } from './SectionSummary.tsx';
+import { isMissingInformationRecord } from '../shared/learnedFields.ts';
 
 type FieldSpec<T> = {
   key: keyof T;
@@ -58,6 +59,9 @@ export function ProfileSections({
   workingKey,
   onFieldClick,
 }: ProfileSectionsProps): React.JSX.Element {
+  const missingInformation = (profile.customInformation || []).filter(isMissingInformationRecord);
+  const customInformation = (profile.customInformation || []).filter(record => !isMissingInformationRecord(record));
+
   return (
     <>
       <BasicInformationSection
@@ -89,8 +93,15 @@ export function ProfileSections({
         onFieldClick={onFieldClick}
         getTitle={(record, index) => record.name || `项目经历 ${index + 1}`}
       />
+      {missingInformation.length > 0 && <CustomInformationSection
+        title="缺失信息填补"
+        records={missingInformation}
+        workingKey={workingKey}
+        onFieldClick={onFieldClick}
+      />}
       <CustomInformationSection
-        records={profile.customInformation || []}
+        title="自定义信息"
+        records={customInformation}
         workingKey={workingKey}
         onFieldClick={onFieldClick}
       />
@@ -99,24 +110,26 @@ export function ProfileSections({
 }
 
 function CustomInformationSection({
+  title,
   records,
   workingKey,
   onFieldClick,
 }: {
+  title: string;
   records: CustomInformation[];
   workingKey: string | null;
   onFieldClick: (key: string, value: string) => void;
 }): React.JSX.Element {
   return (
     <details className="record-section" open>
-      <SectionSummary title="自定义信息" count={records.length} />
+      <SectionSummary title={title} count={records.length} />
       {records.length === 0 ? (
-        <p className="empty-text">暂无自定义信息</p>
+        <p className="empty-text">暂无{title}</p>
       ) : (
         <div className="custom-field-list">
           {records.map((record, index) => {
             const value = record.content.trim();
-            const key = `自定义信息-${record.id}`;
+            const key = `${title}-${record.id}`;
             return (
               <button
                 className="field-button custom-field-button"
@@ -126,7 +139,7 @@ function CustomInformationSection({
                 title={value ? '点击写入网页当前输入框' : '该字段未填写'}
               >
                 <span className="field-label">
-                  {record.name.trim() || `自定义信息 ${index + 1}`}
+                  {record.name.trim() || `${title} ${index + 1}`}
                 </span>
                 <span className={value ? 'field-value' : 'field-value empty-value'}>
                   {value || '未填写'}

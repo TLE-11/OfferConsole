@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { MessageService } from '../shared/message';
 import { LLMProvider, PROVIDER_PRESETS, PROVIDER_ORDER } from '../services/llm/types';
 import type { LLMConfig } from '../services/llm/types';
+import { DEFAULT_FIELD_RECOGNITION_RULES_MD } from '../shared/fieldRecognitionRules.ts';
 
 interface AISettingsProps {
   dataRevision?: number;
@@ -26,6 +27,7 @@ export function AISettings({ dataRevision = 0 }: AISettingsProps) {
   const [urlEdited, setUrlEdited] = useState(false);
   /** 用户是否手动编辑过模型名称；为 true 时切换服务商不覆盖模型 */
   const [modelEdited, setModelEdited] = useState(false);
+  const [recognitionRules, setRecognitionRules] = useState(DEFAULT_FIELD_RECOGNITION_RULES_MD);
 
   useEffect(() => {
     const loadConfig = () => MessageService.sendMessage({ type: 'GET_LLM_CONFIG' }).then(res => {
@@ -42,12 +44,20 @@ export function AISettings({ dataRevision = 0 }: AISettingsProps) {
         setModelEdited(false);
       }
     });
+    const loadRecognitionRules = () => MessageService.sendMessage<{ markdown: string }>({
+      type: 'GET_FIELD_RECOGNITION_RULES',
+    }).then(res => {
+      if (res.success && res.data?.markdown) setRecognitionRules(res.data.markdown);
+    });
     void loadConfig();
+    void loadRecognitionRules();
     const handleStorageChange = (
       changes: Record<string, chrome.storage.StorageChange>,
       areaName: string,
     ) => {
-      if (areaName === 'local' && changes.llmConfig) void loadConfig();
+      if (areaName !== 'local') return;
+      if (changes.llmConfig) void loadConfig();
+      if (changes.settings) void loadRecognitionRules();
     };
     chrome.storage.onChanged.addListener(handleStorageChange);
     return () => chrome.storage.onChanged.removeListener(handleStorageChange);
@@ -91,18 +101,25 @@ export function AISettings({ dataRevision = 0 }: AISettingsProps) {
   };
 
   const handleSave = async () => {
-    const response = await MessageService.sendMessage<{ localSaved: boolean; sync: string }>({
-      type: 'SAVE_LLM_CONFIG',
-      payload: config,
-    });
-    setSaved(response.success);
-    setSaveFailed(!response.success);
+    const [response, rulesResponse] = await Promise.all([
+      MessageService.sendMessage<{ localSaved: boolean; sync: string }>({
+        type: 'SAVE_LLM_CONFIG',
+        payload: config,
+      }),
+      MessageService.sendMessage({
+        type: 'SAVE_FIELD_RECOGNITION_RULES',
+        payload: { markdown: recognitionRules },
+      }),
+    ]);
+    const success = response.success && rulesResponse.success;
+    setSaved(success);
+    setSaveFailed(!success);
     setSaveMessage(
-      response.success
+      success
         ? response.data?.sync === 'queued'
           ? '已保存到本地，同步已排队'
           : '已保存到本地'
-        : response.error || '保存失败',
+        : response.error || rulesResponse.error || '保存失败',
     );
     setTimeout(() => setSaved(false), 2000);
   };
@@ -239,6 +256,28 @@ export function AISettings({ dataRevision = 0 }: AISettingsProps) {
           </p>
         </div>
       )}
+
+      <div className="settings-field">
+        <label>AI 字段识别 Skill（Markdown）</label>
+        <textarea
+          value={recognitionRules}
+          onChange={e => setRecognitionRules(e.target.value)}
+          className="settings-input"
+          rows={12}
+          style={{ fontFamily: 'Consolas, "SFMono-Regular", monospace', lineHeight: 1.55, resize: 'vertical' }}
+          placeholder="写下字段识别规则，例如：紧急联系电话属于紧急联系人，不是候选人本人电话。"
+        />
+        <p className="settings-hint">
+          AI 扫描填充、视觉填充和字段分类都会读取这里。失败补填窗口保存的“AI 识别纠错”也会自动追加到这份 Markdown。
+          <button
+            type="button"
+            onClick={() => setRecognitionRules(DEFAULT_FIELD_RECOGNITION_RULES_MD)}
+            className="settings-link-button"
+          >
+            恢复默认规则
+          </button>
+        </p>
+      </div>
 
       <div className="settings-button-row">
         <button

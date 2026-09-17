@@ -20,23 +20,28 @@ export interface CacheableAIFillField {
   blockContext?: string;
 }
 
-export function buildFieldMatchingCacheKey(domain: string, fields: CacheableField[]): string {
-  const fingerprint = fields
+export function buildFieldMatchingCacheKey(
+  domain: string,
+  fields: CacheableField[],
+  recognitionRules = '',
+): string {
+  const fingerprint = `${fields
     .map(field => [field.index, field.name, field.id, field.placeholder, field.labelText, field.type, field.contextText || '']
       .map(value => String(value).trim().toLowerCase()).join('\u001f'))
-    .join('\u001e');
+    .join('\u001e')}\u001d${recognitionRules.trim()}`;
   let hash = 0x811c9dc5;
   for (let index = 0; index < fingerprint.length; index++) {
     hash ^= fingerprint.charCodeAt(index);
     hash = Math.imul(hash, 0x01000193);
   }
-  return `fieldMatch_v3_${domain}_${(hash >>> 0).toString(16).padStart(8, '0')}`;
+  return `fieldMatch_v4_${domain}_${(hash >>> 0).toString(16).padStart(8, '0')}`;
 }
 
 export function buildAIFillValueCacheKey(
   domain: string,
   field: CacheableAIFillField,
   profileFingerprint: string,
+  recognitionRules = '',
 ): string {
   const source = JSON.stringify({
     domain: domain.trim().toLowerCase(),
@@ -51,11 +56,12 @@ export function buildAIFillValueCacheKey(
       blockContext: field.blockContext || '',
     },
     profileFingerprint,
+    recognitionRules: recognitionRules.trim(),
   });
   let hash = 0x811c9dc5;
   for (let index = 0; index < source.length; index++) {
     hash ^= source.charCodeAt(index);
     hash = Math.imul(hash, 0x01000193);
   }
-  return `aiPageFill_v1_${(hash >>> 0).toString(16).padStart(8, '0')}`;
+  return `aiPageFill_v2_${(hash >>> 0).toString(16).padStart(8, '0')}`;
 }

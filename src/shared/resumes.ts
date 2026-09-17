@@ -8,7 +8,7 @@ import type {
   ResumeVariant,
   UserProfile,
 } from './types.ts';
-import { normalizePoliticalStatusValue } from './personal.ts';
+import { normalizeBirthDateValue, normalizePoliticalStatusValue } from './personal.ts';
 
 export const LEGACY_RESUME_ID = 'legacy-resume';
 
@@ -89,12 +89,29 @@ function mergeEducationWithFallback(
   });
 }
 
+function selectParsedRecordsOrFallback<T extends { id: string }>(
+  parsedRecords: T[],
+  fallbackRecords: T[],
+): T[] {
+  const hasContent = parsedRecords.some(record => Object.entries(record).some(
+    ([key, value]) => key !== 'id' && typeof value === 'string' && value.trim(),
+  ));
+  return hasContent ? parsedRecords : fallbackRecords;
+}
+
+function selectParsedSkillsOrFallback(parsedSkills: string[], fallbackSkills: string[]): string[] {
+  return parsedSkills.some(skill => skill.trim()) ? parsedSkills : fallbackSkills;
+}
+
 function normalizeResumeProfileSnapshot(snapshot: ResumeProfileSnapshot): ResumeProfileSnapshot {
   return {
     personal: {
       ...snapshot.personal,
       ...(snapshot.personal.politicalStatus
         ? { politicalStatus: normalizePoliticalStatusValue(snapshot.personal.politicalStatus) }
+        : {}),
+      ...(snapshot.personal.birthDate
+        ? { birthDate: normalizeBirthDateValue(snapshot.personal.birthDate) }
         : {}),
     },
     education: (snapshot.education || []).map(normalizeEducation),
@@ -192,8 +209,9 @@ export function resolveResumeSelection(
 
 /**
  * 使用所选简历的独立解析结果生成本次填写资料。
- * 联系方式等简历未包含的基本信息回退到用户手动维护的全局资料；
- * 经历、项目和技能则严格跟随所选简历，避免不同岗位版本互相串数据。
+ * 基本信息以用户手动维护的全局资料为准，简历解析结果只补齐空白项；
+ * 经历、项目和技能优先跟随所选简历；解析结果为空时回退到个人信息页，
+ * 避免“资料明明已保存，悬浮窗却显示 0 个”。
  */
 export function buildProfileForResume(
   profile: UserProfile,
@@ -206,13 +224,18 @@ export function buildProfileForResume(
     Object.entries(selected.parsedProfile.personal)
       .filter(([, value]) => typeof value === 'string' && value.trim()),
   );
+  const globalPersonal = Object.fromEntries(
+    Object.entries(profile.personal)
+      .filter(([key, value]) => key !== 'selfEvaluation' && typeof value === 'string' && value.trim()),
+  );
   return {
     ...profile,
-    personal: { ...profile.personal, ...parsedPersonal },
+    // 姓名、日期和联系方式等公共资料必须跟随设置页；自我评价仍可随简历版本切换。
+    personal: { ...profile.personal, ...parsedPersonal, ...globalPersonal },
     education: mergeEducationWithFallback(selected.parsedProfile.education, profile.education),
-    experience: selected.parsedProfile.experience,
-    projects: selected.parsedProfile.projects,
-    skills: selected.parsedProfile.skills,
+    experience: selectParsedRecordsOrFallback(selected.parsedProfile.experience, profile.experience),
+    projects: selectParsedRecordsOrFallback(selected.parsedProfile.projects, profile.projects),
+    skills: selectParsedSkillsOrFallback(selected.parsedProfile.skills, profile.skills),
     resume: selected,
   };
 }

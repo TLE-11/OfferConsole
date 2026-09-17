@@ -9,6 +9,7 @@ test('字段缓存键包含页面字段指纹', () => {
   assert.equal(original, buildFieldMatchingCacheKey('jobs.example.com', fields));
   assert.notEqual(original, buildFieldMatchingCacheKey('jobs.example.com', [{ ...fields[0], labelText: '联系电话' }]));
   assert.notEqual(original, buildFieldMatchingCacheKey('apply.example.com', fields));
+  assert.notEqual(original, buildFieldMatchingCacheKey('jobs.example.com', fields, '紧急电话不是本人电话'));
 });
 
 test('逐项补填缓存同时绑定网站、字段和当前资料', () => {
@@ -25,4 +26,5 @@ test('逐项补填缓存同时绑定网站、字段和当前资料', () => {
   assert.equal(original, buildAIFillValueCacheKey('jobs.example.com', field, '{"degree":"本科"}'));
   assert.notEqual(original, buildAIFillValueCacheKey('jobs.example.com', field, '{"degree":"硕士"}'));
   assert.notEqual(original, buildAIFillValueCacheKey('apply.example.com', field, '{"degree":"本科"}'));
+  assert.notEqual(original, buildAIFillValueCacheKey('jobs.example.com', field, '{"degree":"本科"}', '新的识别规则'));
 });

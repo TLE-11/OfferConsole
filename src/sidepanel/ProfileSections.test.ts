@@ -117,3 +117,23 @@ test('各模块标题行右侧都有折叠箭头图标', () => {
     5,
   );
 });
+
+test('缺失问答保存的内容在填充面板单独显示，设置中仍属于自定义信息', () => {
+  const html = renderToStaticMarkup(
+    React.createElement(ProfileSections, {
+      profile: {
+        ...profile,
+        customInformation: [
+          { id: 'learned-emergency', name: '紧急联系电话', content: '13800001111' },
+          { id: 'custom-hobby', name: '兴趣爱好', content: '摄影' },
+        ],
+      },
+      workingKey: null,
+      onFieldClick: () => {},
+    })
+  );
+
+  assert.ok(html.indexOf('缺失信息填补') < html.indexOf('自定义信息'));
+  assert.match(html, /紧急联系电话/);
+  assert.match(html, /兴趣爱好/);
+});

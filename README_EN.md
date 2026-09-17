@@ -19,7 +19,7 @@ Job ApplyMate is a Chrome and Edge extension that keeps job-application informat
 | Logical form detection | Treat radio/checkbox groups, split date controls, and repeated experience rows as complete questions instead of unrelated inputs |
 | Smart date adaptation | Adapt year, month, and date values to the format required by the website; `2020.06`, `2020.6`, and `2020-06` are treated as the same month |
 | Reliable dropdown filling | Handle common UI libraries, delayed options, searchable selects, multi-selects, and cascaders; strictly distinguish political affiliation, positive/negative, and full-time/part-time choices |
-| Failure review and learning | Review fields that could not be filled, correct and remember a value, skip one item, or skip all failures for the current run |
+| Missing-information Q&A | After Quick Fill or AI Fill, review recognized questions that have no saved answer or values rejected by the page; save answers to the profile and site learning records, and add AI recognition corrections |
 | AI Page Scan | Match the page as structured form blocks and keep every education, work, or project block bound to one profile record |
 | AI Region Fill | Select a form area and use a vision-capable model to fill only the empty controls in that area |
 | Information panel | Focus a web form control and write one saved profile value at a time; rejected values are copied automatically |
@@ -87,12 +87,16 @@ Resume deletion is saved immediately. Adding the exact same source file again up
 3. In **本次简历** (Resume for this fill), choose no automatic upload or one categorized resume.
 4. Select **快速填充** (Quick Fill). Only the explicitly selected resume is uploaded.
 5. Review all values written to the page.
-6. If a field could not be filled, use the review panel in the lower-right corner:
-   - enter a corrected value and choose **填写并记住** (Fill and Remember);
+6. If a recognized question has no saved answer, or a value was rejected, use the review panel in the lower-right corner:
+   - enter the answer and choose **填写并记住** (Fill and Remember); a newly missing answer is also saved to the profile so semantically equivalent fields on other sites can reuse it;
    - choose **本次不填** (Skip This Time) for one item; or
    - choose **本次全部不填** (Skip All This Time).
 
 Learned values are isolated by website and logical field. When a correction matches a saved profile value, Job ApplyMate remembers the profile path as well, so later profile edits can flow into the learned field instead of reusing stale text.
+
+Use **AI 识别纠错** (AI Recognition Correction) when the model misunderstood a field. For example, if “Emergency contact phone” was treated as the candidate's own phone, explain that it belongs to the emergency contact and save the correction. These notes are added to the extension's editable **AI Field Recognition Skill (Markdown)** and automatically included in later AI prompts. The complete Markdown can be edited or reset under **AI Settings**; [`AI_FIELD_RECOGNITION_SKILL.md`](AI_FIELD_RECOGNITION_SKILL.md) is the readable built-in template.
+
+Non-standard answers learned through this review appear in a separate **缺失信息填补** (Missing Information) section of the fill panel. They remain stored under **自定义信息** (Custom Information) in Settings, where they can be edited later.
 
 ### 4. Use AI Page Scan
 
@@ -117,6 +121,8 @@ Open **数据与同步**:
 - **导出完整数据** downloads a versioned JSON backup.
 - **导入完整数据** validates a previous JSON backup before replacing local profile data.
 - Existing backups from the earlier project version remain importable.
+
+No manual changes to an old JSON file are required. New missing-information answers, site learning records, and AI recognition rules are included when a new full backup is exported.
 
 The legacy WebDAV path is intentionally retained for backward compatibility:
 

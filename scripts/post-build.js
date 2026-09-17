@@ -25,6 +25,14 @@ try {
   copyFileSync(manifestSrc, manifestDest);
   console.log('✓ manifest.json copied to dist/');
 
+  // 复制可读的 AI 字段识别 Skill，便于源码用户查看和二次修改。
+  const recognitionSkillSrc = join(projectRoot, 'AI_FIELD_RECOGNITION_SKILL.md');
+  const recognitionSkillDest = join(distDir, 'AI_FIELD_RECOGNITION_SKILL.md');
+  if (existsSync(recognitionSkillSrc)) {
+    copyFileSync(recognitionSkillSrc, recognitionSkillDest);
+    console.log('✓ AI field-recognition Skill copied to dist/');
+  }
+
   // 复制 icons
   const iconsSrcDir = join(projectRoot, 'public', 'icons');
   const iconsDestDir = join(distDir, 'icons');

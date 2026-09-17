@@ -24,6 +24,12 @@ export class FieldMatcher {
     const context = normalize(`${contextText} ${labelText} ${name} ${id}`);
     const htmlType = type.toLowerCase();
 
+    // 紧急联系人、家属和监护人属于第三方资料，绝不能仅因出现“电话/姓名”
+    // 就套用候选人本人的 phone/name；留给学习记录或 AI 补填确认。
+    const asksThirdPartyContact = /紧急\s*联系(?:人|方式|电话)?|应急\s*联系(?:人|方式|电话)?|紧急\s*联络(?:人|方式|电话)?|家庭\s*联系(?:人|方式|电话)?|家属\s*联系(?:人|方式|电话)?|监护人|(?:^|\s)(?:emergency\s*contact|guardian)(?:$|\s)/i
+      .test(`${primary} ${context}`);
+    if (asksThirdPartyContact) return { fieldType: FieldType.UNKNOWN, confidence: 0 };
+
     if (htmlType === 'email' || containsPattern(primary, 'email')) return { fieldType: FieldType.EMAIL, confidence: 1 };
     if (htmlType === 'tel' || /(?:^|\s)(?:phone|mobile|tel|telephone|cellphone)(?:$|\s)|手机|电话/.test(primary)) {
       return { fieldType: FieldType.PHONE, confidence: htmlType === 'tel' ? 1 : 0.98 };

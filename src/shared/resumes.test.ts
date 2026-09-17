@@ -72,7 +72,7 @@ test('插件分类不会改写简历原文件名', () => {
   assert.equal(variant.fileName, '产品经理-张三.pdf');
 });
 
-test('每份简历保留独立解析资料并按选择切换填写内容', () => {
+test('每份简历保留独立经历，但基础资料始终跟随设置页', () => {
   const productProfile = createResumeProfileSnapshot({
     rawText: '产品版',
     personal: { name: '张三', email: 'product@example.com' },
@@ -101,10 +101,96 @@ test('每份简历保留独立解析资料并按选择切换填写内容', () =>
   const product = buildProfileForResume(profile, 'pm');
   const operation = buildProfileForResume(profile, 'ops');
   assert.equal(product.experience[0]?.position, '产品经理');
-  assert.equal(product.personal.email, 'product@example.com');
+  assert.equal(product.personal.name, '默认姓名');
+  assert.equal(product.personal.email, 'base@example.com');
   assert.equal(operation.experience[0]?.position, '内容运营');
   assert.equal(operation.personal.email, 'base@example.com');
   assert.deepEqual(operation.skills, ['用户增长']);
+});
+
+test('设置页基础资料覆盖简历误识别值，自我评价仍随简历切换', () => {
+  const parsedProfile = createResumeProfileSnapshot({
+    rawText: '出生日期：2002.9 电话：17684515539',
+    personal: {
+      birthDate: '2002.9 电话：17684515539',
+      phone: '17684515539',
+      selfEvaluation: '面向产品岗位的自我评价',
+    },
+    education: [], experience: [], projects: [], skills: [],
+  });
+  const profile = {
+    personal: {
+      name: '张三',
+      birthDate: '2002-09-16',
+      phone: '13900001111',
+      selfEvaluation: '默认评价',
+    },
+    education: [], experience: [], projects: [], customInformation: [], skills: [], certifications: [],
+    resumes: [createResumeVariant(legacyResume, { id: 'pm', parsedProfile })],
+  } as any;
+
+  const selected = buildProfileForResume(profile, 'pm');
+  assert.equal(selected.personal.birthDate, '2002-09-16');
+  assert.equal(selected.personal.phone, '13900001111');
+  assert.equal(selected.personal.selfEvaluation, '面向产品岗位的自我评价');
+});
+
+test('简历没有解析出项目、经历或技能时使用个人信息页的数据', () => {
+  const parsedProfile = createResumeProfileSnapshot({
+    rawText: '未识别到结构化经历',
+    personal: {},
+    education: [],
+    experience: [],
+    projects: [],
+    skills: [],
+  });
+  const profile = {
+    personal: { name: '张三' },
+    education: [],
+    experience: [{ id: 'manual-exp', company: '手动填写公司', position: '实习生' }],
+    projects: [{ id: 'manual-project', name: '个人信息页项目', role: '负责人' }],
+    customInformation: [],
+    skills: ['Python'],
+    certifications: [],
+    resumes: [createResumeVariant(legacyResume, { id: 'empty-parsed', parsedProfile })],
+  } as any;
+
+  const selected = buildProfileForResume(profile, 'empty-parsed');
+  assert.equal(selected.experience[0]?.company, '手动填写公司');
+  assert.equal(selected.projects[0]?.name, '个人信息页项目');
+  assert.deepEqual(selected.skills, ['Python']);
+});
+
+test('简历包含有效项目时仍使用当前简历的独立项目', () => {
+  const parsedProfile = createResumeProfileSnapshot({
+    rawText: '项目经历',
+    personal: {}, education: [], experience: [], skills: [],
+    projects: [{ name: '简历定制项目', role: '负责人' }],
+  });
+  const profile = {
+    personal: { name: '张三' }, education: [], experience: [], customInformation: [], skills: [], certifications: [],
+    projects: [{ id: 'manual-project', name: '个人信息页项目', role: '成员' }],
+    resumes: [createResumeVariant(legacyResume, { id: 'project-resume', parsedProfile })],
+  } as any;
+
+  const selected = buildProfileForResume(profile, 'project-resume');
+  assert.equal(selected.projects.length, 1);
+  assert.equal(selected.projects[0]?.name, '简历定制项目');
+});
+
+test('旧简历快照中的出生日期脏数据会在加载时自动清理', () => {
+  const resumes = normalizeResumeLibrary({
+    resumes: [{
+      ...legacyResume,
+      id: 'old-date',
+      category: '默认简历',
+      parsedProfile: {
+        personal: { birthDate: '2002.9 电话：17684515539' },
+        education: [], experience: [], projects: [], skills: [],
+      },
+    }],
+  });
+  assert.equal(resumes[0]?.parsedProfile?.personal.birthDate, '2002-09');
 });
 
 test('旧简历没有独立资料时继续使用全局资料', () => {

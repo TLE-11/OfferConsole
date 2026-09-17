@@ -10,7 +10,7 @@ import type { LLMConfig } from '../services/llm/types';
 import { normalizeApplicationRecords } from './applicationRecords.ts';
 import { normalizeWebDAVServerUrl } from '../services/webdav.ts';
 import { normalizeResumeLibrary } from './resumes.ts';
-import { normalizePoliticalStatusValue } from './personal.ts';
+import { normalizeBirthDateValue, normalizePoliticalStatusValue } from './personal.ts';
 
 export const STORAGE_KEYS = {
   USER_PROFILE: 'userProfile',
@@ -28,6 +28,9 @@ export function normalizeUserProfile(profile: UserProfile): UserProfile {
       ...(profile.personal || {}),
       ...(profile.personal?.politicalStatus
         ? { politicalStatus: normalizePoliticalStatusValue(profile.personal.politicalStatus) }
+        : {}),
+      ...(profile.personal?.birthDate
+        ? { birthDate: normalizeBirthDateValue(profile.personal.birthDate) }
         : {}),
     },
     customInformation: profile.customInformation || [],
