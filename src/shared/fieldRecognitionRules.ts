@@ -1,6 +1,6 @@
 import type { SettingsData } from './types.ts';
 
-export const DEFAULT_FIELD_RECOGNITION_RULES_MD = `# Job ApplyMate 字段识别 Skill
+export const DEFAULT_FIELD_RECOGNITION_RULES_MD = `# OfferConsole 字段识别 Skill
 
 ## 核心规则
 

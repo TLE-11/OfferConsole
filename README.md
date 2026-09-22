@@ -1,3 +1,13 @@
+# OfferConsole
+
+> 你的校招求职控制台：简历库管理、网申表单自动填写、投递进度跟踪。
+>
+> 本项目 fork 自 [Job-ApplyMate](https://github.com/lishuheng1/Job-ApplyMate)（基线 v1.3.1，MIT 协议），在此基础上二次开发。产品规划与里程碑见 [docs/PRD.md](docs/PRD.md)。
+>
+> 以下为上游项目原始文档（功能说明仍以本文为准，逐步替换中）：
+
+---
+
 # Job ApplyMate
 
 <p align="center">

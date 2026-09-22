@@ -414,8 +414,8 @@ function App() {
           aria-hidden="true"
         />
         <div>
-          <h1>Job ApplyMate</h1>
-          <p>你的求职申请搭档</p>
+          <h1>OfferConsole</h1>
+          <p>你的校招求职控制台</p>
         </div>
         <div className="popup-header-actions">
           <button

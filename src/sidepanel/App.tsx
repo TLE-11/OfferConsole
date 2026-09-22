@@ -185,7 +185,7 @@ export default function App() {
   if (!profile) {
     return (
       <main className="panel-state">
-        <h1>Job ApplyMate</h1>
+        <h1>OfferConsole</h1>
         <p>尚未保存个人信息。</p>
         <button className="primary-action" onClick={() => chrome.runtime.openOptionsPage()}>
           设置个人信息
@@ -198,7 +198,7 @@ export default function App() {
     <main className="panel">
       <header className="panel-header">
         <div>
-            <h1>Job ApplyMate</h1>
+            <h1>OfferConsole</h1>
             <p>点击网页输入框，再点击信息字段</p>
         </div>
         <div className="header-actions">
