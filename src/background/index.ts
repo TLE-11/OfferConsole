@@ -32,6 +32,17 @@ import { parseResume, isStructuredType, parseStructuredResume } from '../parsers
 import { NLPHelper } from '../utils/nlpHelper.ts';
 import { LLMService } from '../services/llm/llmService.ts';
 import { collectProfilePiiEntries } from '../services/llm/piiRedaction.ts';
+import { FeishuClient } from '../services/feishu/feishuClient.ts';
+import { REQUIRED_FEISHU_COLUMNS } from '../services/feishu/fieldMapping.ts';
+import {
+  getFeishuConfig,
+  getFeishuSyncStatus,
+  handleFeishuAlarm,
+  reconcileFeishuNow,
+  saveFeishuConfig,
+  scheduleFeishuReconcile,
+} from '../services/feishu/syncEngine.ts';
+import type { FeishuConfig } from '../services/feishu/types.ts';
 import {
   buildAnswerGenerationPrompt,
   buildResumeParsingPrompt,
@@ -394,6 +405,23 @@ export async function handleMessage(
         data: { status: await resolveConflict(message.payload.choice) },
       };
 
+    case 'GET_FEISHU_CONFIG':
+      return { success: true, data: await getFeishuConfig() };
+
+    case 'SAVE_FEISHU_CONFIG':
+      await saveFeishuConfig(message.payload);
+      if (message.payload.enabled) void scheduleFeishuReconcile();
+      return { success: true };
+
+    case 'TEST_FEISHU_CONNECTION':
+      return await handleTestFeishuConnection(message.payload);
+
+    case 'GET_FEISHU_SYNC_STATUS':
+      return { success: true, data: await getFeishuSyncStatus() };
+
+    case 'FEISHU_SYNC_NOW':
+      return { success: true, data: await reconcileFeishuNow() };
+
     default:
       return {
         success: false,
@@ -409,8 +437,31 @@ async function handleApplicationRecordMutation(
   const response = await operation();
   if (response.success) {
     await queueAutoSync(reason);
+    // 飞书单向同步（D2）：防抖入队，不阻塞本次响应
+    void scheduleFeishuReconcile();
   }
   return response;
+}
+
+/** 飞书连接测试：凭证可用 + 目标表存在 + 预检关键列缺失并给出指引 */
+async function handleTestFeishuConnection(config: FeishuConfig): Promise<MessageResponse> {
+  try {
+    const client = new FeishuClient(config);
+    const fieldNames = await client.listFieldNames();
+    const missing = REQUIRED_FEISHU_COLUMNS.filter(column => !fieldNames.includes(column));
+    if (missing.length > 0) {
+      return {
+        success: false,
+        error: `连接成功，但数据表缺少必要列：${missing.join('、')}。请按设置页下方的列名约定补建。`,
+      };
+    }
+    return { success: true };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : '连接测试失败',
+    };
+  }
 }
 
 async function handleWriteFocusedField(
@@ -1209,4 +1260,15 @@ chrome.runtime.onInstalled.addListener((details) => {
     // 首次安装时打开选项页面
     chrome.runtime.openOptionsPage();
   }
+
+  // 有未完成的飞书同步失败项时，安装/更新后继续补跑
+  void getFeishuSyncStatus().then(status => {
+    if (status.failedCount > 0) void scheduleFeishuReconcile();
+  });
+});
+
+// 飞书对账 alarm 唤醒（MV3 Service Worker 被杀后由此恢复同步进度）。
+// 可选链防御：node 测试环境没有 chrome.alarms
+chrome.alarms?.onAlarm?.addListener(alarm => {
+  void handleFeishuAlarm(alarm.name);
 });

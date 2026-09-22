@@ -5,6 +5,7 @@ import type {
   SyncMetadata,
   WebDAVConfig,
 } from '../shared/types';
+import type { FeishuConfig, FeishuSyncStatus } from '../services/feishu/types.ts';
 
 const EMPTY_CONFIG: WebDAVConfig = {
   enabled: false,
@@ -333,6 +334,8 @@ export function DataSyncSettings({ onDataChanged }: Props) {
         )}
       </section>
 
+      <FeishuSyncSection />
+
       {notice && <div className={`data-notice data-notice-${notice.type}`} role="status">{notice.text}</div>}
 
       {confirmingImport && (
@@ -350,5 +353,182 @@ export function DataSyncSettings({ onDataChanged }: Props) {
         </div>
       )}
     </div>
+  );
+}
+
+// ---------- 飞书多维表格单向同步（决策 D2：本地为准，只推送不回写） ----------
+
+const EMPTY_FEISHU_CONFIG: FeishuConfig = {
+  appId: '',
+  appSecret: '',
+  appToken: '',
+  tableId: '',
+  enabled: false,
+};
+
+const FEISHU_COLUMN_GUIDE = [
+  '公司（文本）、岗位（文本）、渠道（文本）、投递链接（超链接）、工作地点（文本）',
+  '状态（单选：待投递/已投递/已笔试/面试中/offer/终止）',
+  '投递时间（日期）、更新时间（日期）、备注（文本）、本地记录ID（文本）',
+];
+
+function FeishuSyncSection() {
+  const [config, setConfig] = useState<FeishuConfig>(EMPTY_FEISHU_CONFIG);
+  const [status, setStatus] = useState<FeishuSyncStatus | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const refreshStatus = async () => {
+    const response = await MessageService.sendMessage<FeishuSyncStatus>({ type: 'GET_FEISHU_SYNC_STATUS' });
+    if (response.success && response.data) setStatus(response.data);
+  };
+
+  useEffect(() => {
+    void MessageService.sendMessage<FeishuConfig>({ type: 'GET_FEISHU_CONFIG' }).then(response => {
+      if (response.success && response.data) setConfig({ ...EMPTY_FEISHU_CONFIG, ...response.data });
+    });
+    void refreshStatus();
+    const timer = window.setInterval(refreshStatus, 5000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const run = async (key: string, action: () => Promise<void>) => {
+    setBusy(key);
+    setNotice(null);
+    try {
+      await action();
+    } finally {
+      setBusy(null);
+      await refreshStatus();
+    }
+  };
+
+  const save = () => run('save', async () => {
+    const response = await MessageService.sendMessage({ type: 'SAVE_FEISHU_CONFIG', payload: config });
+    setNotice({
+      type: response.success ? 'success' : 'error',
+      text: response.success
+        ? '飞书同步设置已保存；投递记录变更后约 3 秒自动推送'
+        : response.error || '保存失败',
+    });
+  });
+
+  const test = () => run('test', async () => {
+    const response = await MessageService.sendMessage({ type: 'TEST_FEISHU_CONNECTION', payload: config });
+    setNotice({
+      type: response.success ? 'success' : 'error',
+      text: response.success ? '连接成功，数据表与必要列检查通过' : response.error || '连接失败',
+    });
+  });
+
+  const syncNow = () => run('sync', async () => {
+    const response = await MessageService.sendMessage({ type: 'FEISHU_SYNC_NOW' });
+    setNotice(
+      response.success
+        ? { type: 'success', text: '对账完成，状态见下方统计' }
+        : { type: 'error', text: response.error || '同步失败' },
+    );
+  });
+
+  return (
+    <section className="data-section">
+      <div className="data-section-heading">
+        <div>
+          <h2 className="settings-section-title">飞书多维表格同步</h2>
+          <p className="settings-description">
+            投递记录单向推送到你的飞书总表：本地为唯一事实源，飞书侧仅作视图，不回写。
+          </p>
+        </div>
+        {status && (
+          <span className={`sync-status ${status.failedCount > 0 ? 'sync-status-error' : 'sync-status-synced'}`}>
+            {status.failedCount > 0 ? `${status.failedCount} 条待重试` : '同步正常'}
+          </span>
+        )}
+      </div>
+
+      <label className="sync-toggle">
+        <input
+          type="checkbox"
+          checked={config.enabled}
+          onChange={event => setConfig({ ...config, enabled: event.target.checked })}
+        />
+        <span>启用投递记录自动推送</span>
+      </label>
+
+      <div className="sync-credentials">
+        <div className="settings-field">
+          <label htmlFor="feishu-app-id">App ID</label>
+          <input
+            id="feishu-app-id"
+            className="settings-input"
+            value={config.appId}
+            onChange={event => setConfig({ ...config, appId: event.target.value })}
+            placeholder="cli_xxxxxxxx"
+          />
+        </div>
+        <div className="settings-field">
+          <label htmlFor="feishu-app-secret">App Secret</label>
+          <input
+            id="feishu-app-secret"
+            type="password"
+            className="settings-input"
+            value={config.appSecret}
+            onChange={event => setConfig({ ...config, appSecret: event.target.value })}
+            autoComplete="off"
+          />
+        </div>
+      </div>
+
+      <div className="sync-credentials">
+        <div className="settings-field">
+          <label htmlFor="feishu-app-token">多维表格 app_token</label>
+          <input
+            id="feishu-app-token"
+            className="settings-input"
+            value={config.appToken}
+            onChange={event => setConfig({ ...config, appToken: event.target.value })}
+            placeholder="表格 URL 中 /base/ 之后的部分"
+          />
+        </div>
+        <div className="settings-field">
+          <label htmlFor="feishu-table-id">数据表 table_id</label>
+          <input
+            id="feishu-table-id"
+            className="settings-input"
+            value={config.tableId}
+            onChange={event => setConfig({ ...config, tableId: event.target.value })}
+            placeholder="表格 URL 中 table= 参数"
+          />
+        </div>
+      </div>
+
+      <div className="sync-actions">
+        <button className="btn btn-secondary" onClick={test} disabled={busy !== null}>
+          {busy === 'test' ? '测试中…' : '测试连接'}
+        </button>
+        <button className="btn btn-primary" onClick={save} disabled={busy !== null}>保存设置</button>
+        <button className="btn btn-secondary" onClick={syncNow} disabled={busy !== null || !config.enabled}>
+          {busy === 'sync' ? '同步中…' : '立即对账'}
+        </button>
+      </div>
+
+      <div className="sync-detail" aria-live="polite">
+        <span>最近成功对账：{status?.lastSyncedAt ? new Date(status.lastSyncedAt).toLocaleString() : '暂无'}</span>
+        {status && <span> ｜ 待推送 {status.pendingCount} 条 ｜ 失败 {status.failedCount} 条</span>}
+        {status?.lastError && <p>{status.lastError}</p>}
+        {notice && <p className={notice.type === 'error' ? 'settings-save-error' : 'settings-success'}>{notice.text}</p>}
+      </div>
+
+      <details className="settings-hint">
+        <summary>首次配置指引与列名约定</summary>
+        <ol>
+          <li>飞书开放平台创建「企业自建应用」，开通多维表格读写权限（bitable:app）。</li>
+          <li>新建多维表格，把应用添加为表格协作者（可编辑）。</li>
+          <li>按以下约定建列：{FEISHU_COLUMN_GUIDE.map((line, index) => <div key={index}>{line}</div>)}</li>
+          <li>从表格 URL 复制 app_token 与 table_id 填入上方，保存并测试连接。</li>
+        </ol>
+        <p>凭据仅保存在本机浏览器，不参与 WebDAV/备份导出之外的任何传输。</p>
+      </details>
+    </section>
   );
 }

@@ -410,7 +410,12 @@ export type Message =
   | { type: 'SYNC_NOW'; payload?: null }
   | { type: 'FORCE_UPLOAD_LOCAL'; payload?: null }
   | { type: 'FORCE_DOWNLOAD_REMOTE'; payload?: null }
-  | { type: 'RESOLVE_SYNC_CONFLICT'; payload: { choice: 'local' | 'remote' } };
+  | { type: 'RESOLVE_SYNC_CONFLICT'; payload: { choice: 'local' | 'remote' } }
+  | { type: 'GET_FEISHU_CONFIG'; payload?: null }
+  | { type: 'SAVE_FEISHU_CONFIG'; payload: import('../services/feishu/types.ts').FeishuConfig }
+  | { type: 'TEST_FEISHU_CONNECTION'; payload: import('../services/feishu/types.ts').FeishuConfig }
+  | { type: 'GET_FEISHU_SYNC_STATUS'; payload?: null }
+  | { type: 'FEISHU_SYNC_NOW'; payload?: null };
 
 export interface MessageResponse<T = any> {
   success: boolean;
