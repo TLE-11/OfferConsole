@@ -28,6 +28,12 @@ export interface LLMConfig {
   temperature?: number;
   maxTokens?: number;
   visionEnabled?: boolean;
+  /**
+   * PII 脱敏保护（底线 L4），缺省视为开启。
+   * 开启时，发往模型服务的文本会把姓名/手机号/邮箱/身份证等替换为语义占位符，
+   * 响应返回后再还原为真实值。仅在用户明确知悉风险时才应设为 false。
+   */
+  piiProtection?: boolean;
 }
 
 /**

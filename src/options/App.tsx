@@ -341,6 +341,21 @@ function App() {
           '本地读取超过 30 秒，请确认文件不是扫描版或损坏文件',
         );
 
+        // 底线 L4：AI 解析会把简历原文（含姓名、手机号等 PII）发往模型服务商，
+        // 必须显式征得用户同意；拒绝则静默使用本地规则，原文不出本机。
+        let allowRawResume = false;
+        const llmConfigRes = await MessageService.sendMessage({ type: 'GET_LLM_CONFIG' });
+        const hasAiService = Boolean(
+          llmConfigRes.success && (llmConfigRes.data as { apiKey?: string } | null)?.apiKey,
+        );
+        if (hasAiService) {
+          allowRawResume = window.confirm(
+            `AI 解析会把「${file.name}」的完整原文（含姓名、手机号等敏感信息）发送到你配置的模型服务商。\n\n`
+            + '点击「确定」：发送原文，使用 AI 解析（识别更完整）\n'
+            + '点击「取消」：不发送原文，仅使用本地规则解析',
+          );
+        }
+
         const response = await MessageService.sendMessage({
           type: 'PARSE_RESUME',
           payload: {
@@ -349,6 +364,7 @@ function App() {
             fileName: file.name,
             category: resumeCategory.trim() || '未分类',
             rawText,
+            allowRawResume,
           }
         });
 

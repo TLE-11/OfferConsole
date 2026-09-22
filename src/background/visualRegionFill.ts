@@ -1,5 +1,6 @@
 import { buildVisualRegionFillPrompt } from '../services/llm/prompts.ts';
 import { LLMService } from '../services/llm/llmService.ts';
+import { collectProfilePiiEntries } from '../services/llm/piiRedaction.ts';
 import type { LLMConfig, LLMResponse } from '../services/llm/types.ts';
 import { supportsVisionInput } from '../services/llm/visionCapabilities.ts';
 import {
@@ -35,7 +36,7 @@ interface VisualRegionFillDeps {
     chat: (
       messages: Parameters<LLMService['chat']>[0],
       signal?: AbortSignal,
-      options?: { temperature?: number },
+      options?: Parameters<LLMService['chat']>[2],
     ) => Promise<LLMResponse>;
   };
   getContexts: () => Promise<chrome.runtime.ExtensionContext[]>;
@@ -101,7 +102,10 @@ export async function handleVisualRegionFill(
     const result = await llm.chat([
       { role: 'system', content: system },
       { role: 'user', content: userParts },
-    ], signal, { temperature: 0 });
+    ], signal, {
+      temperature: 0,
+      pii: { entries: collectProfilePiiEntries(profile) },
+    });
 
     const parsed = parseVisualRegionFillResponse(result.content);
     const mappings = validateVisualRegionMappings(parsed.mappings, payload, profile);

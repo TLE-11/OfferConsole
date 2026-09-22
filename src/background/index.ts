@@ -31,6 +31,7 @@ import {
 import { parseResume, isStructuredType, parseStructuredResume } from '../parsers/index.ts';
 import { NLPHelper } from '../utils/nlpHelper.ts';
 import { LLMService } from '../services/llm/llmService.ts';
+import { collectProfilePiiEntries } from '../services/llm/piiRedaction.ts';
 import {
   buildAnswerGenerationPrompt,
   buildResumeParsingPrompt,
@@ -279,7 +280,8 @@ export async function handleMessage(
         message.payload.fileType,
         message.payload.fileName,
         message.payload.category,
-        message.payload.rawText
+        message.payload.rawText,
+        message.payload.allowRawResume === true
       );
 
     case 'CREATE_APPLICATION_RECORD_DRAFT':
@@ -565,7 +567,10 @@ async function handleAIFillSection(
     const result = await llm.chat([
       { role: 'system', content: system },
       { role: 'user', content: user },
-    ], controller.signal, { temperature: 0 });
+    ], controller.signal, {
+      temperature: 0,
+      pii: { entries: collectProfilePiiEntries(profile) },
+    });
 
     let jsonStr = result.content.trim();
     if (jsonStr.startsWith('```')) {
@@ -793,7 +798,8 @@ async function handleParseResume(
   fileType: string,
   fileName: string,
   category?: string,
-  preParsedText?: string
+  preParsedText?: string,
+  allowRawResume?: boolean
 ): Promise<MessageResponse> {
   try {
     const rawText = preParsedText ?? await parseResume(fileData, fileType);
@@ -808,7 +814,9 @@ async function handleParseResume(
       parseMethod = 'structured';
     } else {
       const llmConfig = await StorageService.getLLMConfig();
-      if (llmConfig?.apiKey) {
+      // 底线 L4：简历原文含完整 PII，仅当用户在添加简历时显式确认
+      // （allowRawResume === true）才发送原文给模型服务；否则本地规则解析
+      if (llmConfig?.apiKey && allowRawResume === true) {
         const controller = new AbortController();
         let timedOut = false;
         const timeoutId = setTimeout(() => {
@@ -930,10 +938,11 @@ async function parseResumeWithLLM(
   const llm = new LLMService(config);
   const { system, user } = buildResumeParsingPrompt(rawText);
 
+  // 调用方已确认用户同意发送简历原文（allowRawResume），此处豁免脱敏
   const result = await llm.chat([
     { role: 'system', content: system },
     { role: 'user', content: user },
-  ], signal, { temperature: 0 });
+  ], signal, { temperature: 0, pii: { allowRaw: true } });
 
   let jsonStr = result.content.trim();
   if (jsonStr.startsWith('```')) {
@@ -979,7 +988,9 @@ async function handleGenerateAnswer(
     const result = await llm.chat([
       { role: 'system', content: system },
       { role: 'user', content: user },
-    ]);
+    ], undefined, {
+      pii: { entries: collectProfilePiiEntries(profile) },
+    });
 
     return { success: true, data: { answer: result.content } };
   } catch (error) {

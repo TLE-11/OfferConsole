@@ -1,5 +1,15 @@
 import type { ChatContentPart, LLMConfig, ChatMessage, LLMResponse } from './types';
 import { LLMProvider, DEFAULT_MAX_TOKENS, MAX_TOKENS_CEILING } from './types.ts';
+import { createPiiRedactor, type PiiEntry, type PiiRedactor } from './piiRedaction.ts';
+
+export interface PiiGuardOptions {
+  /** 需要精确替换的 PII 已知值（姓名、微信号等模式正则覆盖不到的） */
+  entries?: PiiEntry[];
+  /** 豁免脱敏、按原文发送（仅限 AI 简历解析等经用户显式确认的场景） */
+  allowRaw?: boolean;
+  /** 返回前是否把响应中的占位符还原为真实值；默认 true */
+  restoreResponse?: boolean;
+}
 
 /** 输出被 max_tokens 截断且正文为空时抛出，供上层决定是否加大额度重试 */
 export class TruncatedEmptyOutputError extends Error {
@@ -32,8 +42,19 @@ export class LLMService {
   async chat(
     messages: ChatMessage[],
     signal?: AbortSignal,
-    options?: { temperature?: number },
+    options?: { temperature?: number; pii?: PiiGuardOptions },
   ): Promise<LLMResponse> {
+    // 底线 L4：默认对出站文本做 PII 脱敏；仅在 pii.allowRaw（用户已显式确认）
+    // 或配置中显式关闭 piiProtection 时按原文发送。
+    const piiEnabled = this.config.piiProtection !== false && options?.pii?.allowRaw !== true;
+    const redactor: PiiRedactor | null = piiEnabled
+      ? createPiiRedactor(options?.pii?.entries ?? [])
+      : null;
+    const outbound = redactor
+      ? messages.map(message => ({ ...message, content: redactMessageContent(message.content, redactor) }))
+      : messages;
+    const restoreResponse = options?.pii?.restoreResponse !== false;
+
     // 旧配置里可能存有更小的 maxTokens，不能让它把额度压到默认值以下
     let budget = Math.min(
       Math.max(this.config.maxTokens ?? 0, DEFAULT_MAX_TOKENS),
@@ -42,9 +63,13 @@ export class LLMService {
 
     for (;;) {
       try {
-        return this.config.provider === LLMProvider.CLAUDE
-          ? await this.callClaude(messages, signal, budget, options?.temperature)
-          : await this.callOpenAICompatible(messages, signal, budget, options?.temperature);
+        const response = this.config.provider === LLMProvider.CLAUDE
+          ? await this.callClaude(outbound, signal, budget, options?.temperature)
+          : await this.callOpenAICompatible(outbound, signal, budget, options?.temperature);
+        if (redactor && restoreResponse) {
+          response.content = redactor.restoreText(response.content);
+        }
+        return response;
       } catch (error) {
         if (!(error instanceof TruncatedEmptyOutputError)) throw error;
 
@@ -212,6 +237,17 @@ export class LLMService {
   async testConnection(): Promise<void> {
     await this.chat([{ role: 'user', content: 'Hi. Reply with just "ok".' }]);
   }
+}
+
+/**
+ * 脱敏一条消息的 content：文本部分过 redactor，图片部分按原样发送。
+ * 注意：框选补填的屏幕截图不做图像脱敏，界面文案已提示用户勿框选敏感区域。
+ */
+function redactMessageContent(content: ChatMessage['content'], redactor: PiiRedactor): ChatMessage['content'] {
+  if (typeof content === 'string') return redactor.redactText(content);
+  return content.map(part => (
+    part.type === 'text' ? { ...part, text: redactor.redactText(part.text) } : part
+  ));
 }
 
 /** 各家平台的错误体格式不一，尽量抽出可读的一句话，否则退回原始文本 */

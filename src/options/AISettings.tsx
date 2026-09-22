@@ -258,6 +258,23 @@ export function AISettings({ dataRevision = 0 }: AISettingsProps) {
       )}
 
       <div className="settings-field">
+        <label className="settings-checkbox-label">
+          <input
+            type="checkbox"
+            checked={config.piiProtection !== false}
+            onChange={e => setConfig({ ...config, piiProtection: e.target.checked })}
+          />
+          PII 脱敏保护（推荐开启）
+        </label>
+        <p className="settings-hint">
+          开启后，发往模型服务的文本会自动把姓名、手机号、邮箱、身份证号等替换为语义占位符（如【姓名】），
+          AI 回答返回本机后再还原为真实值，填充结果不受影响。
+          AI 简历解析因必须阅读简历原文，会在添加简历时单独征得你的同意；
+          框选补填的屏幕截图按原样发送，请勿框选包含敏感信息的区域。
+        </p>
+      </div>
+
+      <div className="settings-field">
         <label>AI 字段识别 Skill（Markdown）</label>
         <textarea
           value={recognitionRules}

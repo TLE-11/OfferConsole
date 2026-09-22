@@ -332,7 +332,7 @@ export interface VisualRegionFillMappingResult {
 export type Message =
   | { type: 'GET_USER_PROFILE'; payload?: null }
   | { type: 'SAVE_USER_PROFILE'; payload: UserProfile }
-  | { type: 'PARSE_RESUME'; payload: { file: string; fileType: string; fileName: string; category?: string; rawText?: string } }
+  | { type: 'PARSE_RESUME'; payload: { file: string; fileType: string; fileName: string; category?: string; rawText?: string; allowRawResume?: boolean } }
   | { type: 'FILL_FORM'; payload?: { reusePreview?: boolean; resumeId?: string | null } | null }
   | { type: 'PREVIEW_FILL'; payload?: { resumeId?: string | null } | null }
   | { type: 'UNDO_LAST_FILL'; payload?: null }
