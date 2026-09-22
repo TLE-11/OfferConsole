@@ -34,7 +34,7 @@ export function upsertFieldRecognitionHint(
   if (!safeDomain || !signature.trim() || !safeHint) return markdown;
 
   const markerId = hashText(`${safeDomain}\u001f${signature.trim()}`);
-  const marker = `<!-- job-applymate-field-hint:${markerId} -->`;
+  const marker = `<!-- offerconsole-field-hint:${markerId} -->`;
   const rule = `${marker}\n- 网站 \`${safeDomain}\` 的字段“${safeLabel || '未命名字段'}”：${safeHint}`;
   const existing = markdown || DEFAULT_FIELD_RECOGNITION_RULES_MD;
   const markerIndex = existing.indexOf(marker);

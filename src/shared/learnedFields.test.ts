@@ -90,7 +90,7 @@ test('同一网站字段的 AI 纠正规则会更新而不是重复追加', () =
     '紧急联系电话',
     '必须读取自定义信息中的紧急联系电话',
   );
-  assert.equal((second.match(/job-applymate-field-hint:/g) || []).length, 1);
+  assert.equal((second.match(/offerconsole-field-hint:/g) || []).length, 1);
   assert.doesNotMatch(second, /不是本人电话/);
   assert.match(second, /必须读取自定义信息中的紧急联系电话/);
 });

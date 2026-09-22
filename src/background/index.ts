@@ -1085,7 +1085,7 @@ async function handleSaveLLMConfig(config: LLMConfig): Promise<MessageResponse> 
 
 function backupFilename(date = new Date()): string {
   const compact = date.toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15);
-  return `job-applymate-backup-${compact}.json`;
+  return `offerconsole-backup-${compact}.json`;
 }
 
 async function handleExportBackup(): Promise<MessageResponse> {

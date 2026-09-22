@@ -10,7 +10,7 @@ export default defineConfig({
     copyPublicDir: false,
     lib: {
       entry: resolve(__dirname, 'src/content/index.ts'),
-      name: 'JobApplyMateContent',
+      name: 'OfferConsoleContent',
       formats: ['iife'],
       fileName: () => 'content.js',
     },

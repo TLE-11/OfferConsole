@@ -2,6 +2,13 @@
   "name": "offerconsole",
   "private": true,
   "version": "0.1.0",
+  "description": "OfferConsole —— 你的校招求职控制台：简历库管理、网申表单自动填写、投递进度跟踪（Chrome/Edge 扩展，MV3）",
+  "author": "TLE-11",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/TLE-11/OfferConsole.git"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",

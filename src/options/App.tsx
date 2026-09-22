@@ -438,7 +438,7 @@ function App() {
             alt=""
           />
           <div>
-            <span className="options-brand-name">JOB APPLYMATE</span>
+            <span className="options-brand-name">OFFERCONSOLE</span>
             <h1>建立你的申请资料库</h1>
             <p>一次整理，之后每份网申都能快速、准确地调用。</p>
           </div>
