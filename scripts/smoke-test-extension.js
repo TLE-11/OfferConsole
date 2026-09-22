@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -8,10 +8,23 @@ import { fileURLToPath } from 'node:url';
 const projectRoot = join(fileURLToPath(new URL('.', import.meta.url)), '..');
 const extensionDir = join(projectRoot, 'dist');
 const chromeCandidates = [
+  // 显式指定（branded Chrome 153+ 忽略 --load-extension，需用 Chrome for Testing / Chromium）
+  ...(process.env.SMOKE_BROWSER ? [process.env.SMOKE_BROWSER] : []),
+  // Windows
   'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
   'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
   'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
   'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+  // macOS
+  '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+  '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
+  '/Applications/Chromium.app/Contents/MacOS/Chromium',
+  // Linux
+  '/usr/bin/google-chrome',
+  '/usr/bin/google-chrome-stable',
+  '/usr/bin/chromium',
+  '/usr/bin/chromium-browser',
+  '/usr/bin/microsoft-edge',
 ];
 const browserPath = chromeCandidates.find(existsSync);
 if (!browserPath) throw new Error('未找到可用于冒烟测试的 Chrome 或 Edge');
@@ -103,13 +116,14 @@ browser.stdout?.on('data', chunk => { browserDiagnostics += chunk.toString(); })
 browser.stderr?.on('data', chunk => { browserDiagnostics += chunk.toString(); });
 
 async function waitForPageTarget() {
-  for (let attempt = 0; attempt < 50; attempt += 1) {
+  // Chrome for Testing 全新 profile 首次初始化较慢（实测 6s+），放宽到 15s
+  for (let attempt = 0; attempt < 100; attempt += 1) {
     try {
       const targets = await fetch(`http://127.0.0.1:${debugPort}/json/list`).then(response => response.json());
       const target = targets.find(item => item.type === 'page' && item.url === pageUrl);
       if (target?.webSocketDebuggerUrl) return target.webSocketDebuggerUrl;
     } catch {}
-    await new Promise(resolve => setTimeout(resolve, 100));
+    await new Promise(resolve => setTimeout(resolve, 150));
   }
   throw new Error('浏览器测试页未能启动');
 }
@@ -174,23 +188,78 @@ async function captureRuntimeDiagnostics(webSocketUrl) {
 try {
   const webSocketUrl = await waitForPageTarget();
   const runtimeDiagnostics = await captureRuntimeDiagnostics(webSocketUrl);
-  await new Promise(resolve => setTimeout(resolve, 1800));
-  const initialized = await evaluate(
-    webSocketUrl,
-    `Array.from(document.querySelectorAll('style')).some(style => style.textContent.includes('@keyframes slideIn'))`,
-  );
+  // 竞态修复：Chrome 启动时 pageUrl 可能早于扩展注册完成，
+  // 而已打开的页面不会补注 content script。扩展就绪后 reload 一次确保注入。
+  await sendCdpCommand(webSocketUrl, 'Page.reload', { ignoreCache: true });
+  await new Promise(resolve => setTimeout(resolve, 500));
+  // 轮询等待 content.js 注入：全新 profile 首次启动 + 扩展初始化在 macOS 上可能超过 2s
+  let initialized = false;
+  for (let attempt = 0; attempt < 25 && !initialized; attempt += 1) {
+    initialized = await evaluate(
+      webSocketUrl,
+      `Array.from(document.querySelectorAll('style')).some(style => style.textContent.includes('@keyframes slideIn'))`,
+    );
+    if (!initialized) await new Promise(resolve => setTimeout(resolve, 300));
+  }
   if (!initialized) {
     const targets = await fetch(`http://127.0.0.1:${debugPort}/json/list`).then(response => response.json());
     console.error('浏览器目标：', targets.map(item => `${item.type}:${item.url}`).join('\n'));
     console.error('浏览器诊断：', browserDiagnostics.slice(-4000));
+    console.error('页面运行时消息：', JSON.stringify(runtimeDiagnostics.messages.slice(-20)));
+    const probe = await evaluate(
+      webSocketUrl,
+      `JSON.stringify({readyState: document.readyState, styleCount: document.querySelectorAll('style').length, hasExtGlobal: typeof window.__jobApplyMateInfoOverlayControllerV1__})`,
+    );
+    console.error('页面探针：', probe);
+    const swTarget = targets.find(item => item.type === 'service_worker' && /\/background\.js$/.test(item.url));
+    if (swTarget?.webSocketDebuggerUrl) {
+      const swProbe = await evaluate(swTarget.webSocketDebuggerUrl, `(async () => {
+        const perms = await chrome.permissions.getAll();
+        const [tab] = await chrome.tabs.query({ url: ${JSON.stringify(pageUrl)} });
+        let manualInject = 'no-tab';
+        if (tab?.id) {
+          try {
+            await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] });
+            manualInject = 'ok';
+          } catch (error) { manualInject = String(error); }
+        }
+        return JSON.stringify({ origins: perms.origins, manualInject });
+      })()`);
+      console.error('ServiceWorker 探针：', swProbe);
+    }
     throw new Error('content.js 未在真实浏览器页面中完成初始化');
   }
   const targets = await fetch(`http://127.0.0.1:${debugPort}/json/list`).then(response => response.json());
-  const serviceWorker = targets.find(item => item.type === 'service_worker' && /\/background\.js$/.test(item.url));
-  if (!serviceWorker?.webSocketDebuggerUrl) throw new Error('未找到 Job ApplyMate 后台脚本');
+  // Chrome 组件扩展的 SW 也可能叫 background.js，需按 manifest name 精确锁定本扩展
+  const extensionName = JSON.parse(readFileSync(join(extensionDir, 'manifest.json'), 'utf8')).name;
+  let serviceWorker = null;
+  for (const candidate of targets.filter(item => item.type === 'service_worker' && /\/background\.js$/.test(item.url))) {
+    try {
+      const name = await evaluate(candidate.webSocketDebuggerUrl, 'chrome.runtime.getManifest().name');
+      if (name === extensionName) { serviceWorker = candidate; break; }
+    } catch {}
+  }
+  if (!serviceWorker?.webSocketDebuggerUrl) throw new Error(`未找到 ${extensionName} 后台脚本`);
   const detection = await evaluate(serviceWorker.webSocketDebuggerUrl, `(async () => {
-    const tabs = await chrome.tabs.query({ url: ${JSON.stringify(pageUrl)} });
-    if (!tabs[0]?.id) return { success: false, error: '测试页标签不存在' };
+    // 不依赖 tab.url（无 host 授权的 tab 不暴露 URL，且 match pattern 不支持端口）：
+    // 遍历所有窗口的所有 tab 发 PING_CONTENT，content.js 存活者即为测试页。
+    const allWindows = await chrome.windows.getAll({ populate: true });
+    const allTabs = allWindows.flatMap(win => win.tabs || []);
+    const tabs = [];
+    for (const tab of allTabs) {
+      if (!tab?.id) continue;
+      try {
+        const pong = await chrome.tabs.sendMessage(tab.id, { type: 'PING_CONTENT' }, { frameId: 0 });
+        if (pong?.success) tabs.push(tab);
+      } catch {}
+    }
+    if (!tabs[0]?.id) {
+      return {
+        success: false,
+        error: '测试页标签不存在',
+        seen: allTabs.map(tab => ({ id: tab.id, url: tab.url ?? null, status: tab.status, windowId: tab.windowId })),
+      };
+    }
     let response;
     for (const delay of [0, 150, 300, 500]) {
       if (delay) await new Promise(resolve => setTimeout(resolve, delay));
