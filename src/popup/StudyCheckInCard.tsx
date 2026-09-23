@@ -63,7 +63,9 @@ export function StudyCheckInCard() {
         setProblem(detected);
         setPlatform(detected.platform);
         setProblemId(detected.problemId);
-        setTitle(detected.title);
+        // CodeTop 是题单聚合页，页面标题是题单名而非题名，
+        // 不预填（避免「题名=题单名」的脏数据），仅在界面上作参考提示
+        setTitle(detected.platform === 'CodeTop' ? '' : detected.title);
       }
     });
     void refreshCheckIns();
@@ -97,7 +99,8 @@ export function StudyCheckInCard() {
       if (!response.success) throw new Error(response.error || '打卡失败');
       setNotice('打卡成功');
       setDuration('');
-      if (!problem) {
+      // CodeTop 题单页会连续刷多道，题名/题号/标签打完即清，避免沿用上一条
+      if (!problem || problem.platform === 'CodeTop') {
         setProblemId('');
         setTitle('');
         setTagsInput('');
@@ -119,11 +122,17 @@ export function StudyCheckInCard() {
         刷题打卡 · 今日 {stats.todayCount} 题 · 连续 {stats.streakDays} 天
       </div>
 
-      {showDetectedForm && (
+      {showDetectedForm && problem.platform !== 'CodeTop' && (
         <div style={{ fontSize: 13, margin: '8px 0' }}>
           <strong>{problem.platform}</strong>
           {problem.problemId ? ` #${problem.problemId}` : ''}
           <div style={{ marginTop: 4, color: '#163b43', fontWeight: 600 }}>{problem.title}</div>
+        </div>
+      )}
+
+      {showDetectedForm && problem.platform === 'CodeTop' && (
+        <div style={{ fontSize: 12, margin: '8px 0', color: '#526b6e' }}>
+          当前 CodeTop 题单：{problem.title || '未命名题单'}（题单页无法定位单题，请填写你刷的那道）
         </div>
       )}
 
@@ -140,7 +149,7 @@ export function StudyCheckInCard() {
 
       {(showDetectedForm || showManualForm) && (
         <div style={{ display: 'grid', gap: 8, marginTop: 8, fontSize: 13 }}>
-          {showManualForm && (
+          {(showManualForm || problem?.platform === 'CodeTop') && (
             <>
               <div style={{ display: 'flex', gap: 8 }}>
                 <select
