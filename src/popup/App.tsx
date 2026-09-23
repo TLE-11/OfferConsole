@@ -3,6 +3,7 @@ import { MessageService } from '../shared/message';
 import type { FillPreviewItem, Message, MessageResponse, UserProfile } from '../shared/types';
 import type { LLMConfig } from '../services/llm/types';
 import { getResumeLibrary } from '../shared/resumes.ts';
+import { StudyCheckInCard } from './StudyCheckInCard.tsx';
 
 const APPLICATION_RECORDS_PAGE = 'src/application-records/index.html';
 const SELECTED_RESUME_STORAGE_KEY = 'jobApplyMateSelectedResumeId';
@@ -553,6 +554,8 @@ function App() {
           <button onClick={openOptions} className="button button-quiet">
             设置个人信息
           </button>
+
+          <StudyCheckInCard />
         </div>
 
         {detectedFields === 0 && profile && (

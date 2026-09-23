@@ -11,6 +11,7 @@ import { EducationSection } from './EducationSection';
 import { ExperienceSection } from './ExperienceSection';
 import { DataSyncSettings } from './DataSyncSettings';
 import { ApplicationRecordsSection } from './ApplicationRecordsSection';
+import { StudyCheckInSection } from './StudyCheckInSection.tsx';
 import { parsePDF } from '../parsers/pdfParser';
 import { parseDOCX } from '../parsers/docxParser';
 import { removeResumeVariant } from '../shared/resumes.ts';
@@ -24,6 +25,7 @@ const OPTION_TABS = [
   'ai',
   'data-sync',
   'application-records',
+  'study',
 ] as const;
 
 type OptionTab = typeof OPTION_TABS[number];
@@ -511,6 +513,12 @@ function App() {
           >
             投递记录
           </button>
+          <button
+            onClick={() => setActiveTab('study')}
+            className={activeTab === 'study' ? 'options-tab active' : 'options-tab'}
+          >
+            刷题打卡
+          </button>
         </nav>
 
         <div className="options-panel">
@@ -862,7 +870,9 @@ function App() {
 
           {activeTab === 'application-records' && <ApplicationRecordsSection />}
 
-          {activeTab !== 'ai' && activeTab !== 'data-sync' && activeTab !== 'application-records' && (
+          {activeTab === 'study' && <StudyCheckInSection />}
+
+          {activeTab !== 'ai' && activeTab !== 'data-sync' && activeTab !== 'application-records' && activeTab !== 'study' && (
             <div className="options-actions">
             <button onClick={handleSave} disabled={saving} className="btn btn-primary">
               {saving ? '保存中...' : '保存设置'}

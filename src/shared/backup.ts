@@ -11,6 +11,7 @@ import type {
 } from './types';
 import type { LLMConfig } from '../services/llm/types';
 import { normalizeUserProfile } from './storage.ts';
+import { normalizeStudyCheckIns, validateStudyCheckIns } from './studyCheckIns.ts';
 
 export const BACKUP_SCHEMA_VERSION = 1;
 export const MAX_BACKUP_BYTES = 20 * 1024 * 1024;
@@ -162,7 +163,7 @@ function validateV1(value: PlainObject): BackupParseResult {
   }
   if (!isPlainObject(value.data)) return failure('INVALID_DATA', '备份数据区域无效');
 
-  const { userProfile, llmConfig, settings, applicationRecords } = value.data;
+  const { userProfile, llmConfig, settings, applicationRecords, studyCheckIns } = value.data;
   if (userProfile !== null && !validateUserProfile(userProfile)) {
     return failure('INVALID_USER_PROFILE', '个人资料结构无效');
   }
@@ -174,6 +175,9 @@ function validateV1(value: PlainObject): BackupParseResult {
   }
   if (!validateApplicationRecords(applicationRecords)) {
     return failure('INVALID_DATA', '投递记录结构无效');
+  }
+  if (!validateStudyCheckIns(studyCheckIns)) {
+    return failure('INVALID_DATA', '刷题打卡结构无效');
   }
 
   // webdavConfig 仅出现在本地导出文件中；WebDAV 同步的文档不含此字段。
@@ -198,6 +202,9 @@ function validateV1(value: PlainObject): BackupParseResult {
   if (applicationRecords !== undefined) {
     document.data.applicationRecords = (applicationRecords as ApplicationRecord[] | null) ?? null;
   }
+  if (studyCheckIns !== undefined) {
+    document.data.studyCheckIns = normalizeStudyCheckIns(studyCheckIns);
+  }
   if (value.webdavConfig !== undefined) {
     document.webdavConfig = (value.webdavConfig as WebDAVConfig | null) ?? null;
   }
@@ -219,6 +226,7 @@ export function createBackupDocument(
       llmConfig: data.llmConfig,
       settings: data.settings,
       applicationRecords: data.applicationRecords ?? [],
+      studyCheckIns: normalizeStudyCheckIns(data.studyCheckIns),
     },
   };
   // 只有本地导出会显式传入 webdavConfig；同步上传不带凭据，避免密码落到远端。
@@ -284,5 +292,6 @@ export function createBackupSummary(document: BackupDocument): BackupSummary {
     hasLLMConfig: document.data.llmConfig !== null,
     hasApiKey: Boolean(document.data.llmConfig?.apiKey),
     hasWebDAVConfig: Boolean(document.webdavConfig?.serverUrl),
+    studyCheckInCount: document.data.studyCheckIns?.length ?? 0,
   };
 }

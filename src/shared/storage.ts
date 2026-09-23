@@ -9,6 +9,7 @@ import type {
 import type { LLMConfig } from '../services/llm/types';
 import { normalizeApplicationRecords } from './applicationRecords.ts';
 import { normalizeWebDAVServerUrl } from '../services/webdav.ts';
+import { normalizeStudyCheckIns, type StudyCheckIn } from './studyCheckIns.ts';
 import { normalizeResumeLibrary } from './resumes.ts';
 import { normalizeBirthDateValue, normalizePoliticalStatusValue } from './personal.ts';
 
@@ -19,6 +20,7 @@ export const STORAGE_KEYS = {
   WEBDAV_CONFIG: 'webdavConfig',
   SYNC_METADATA: 'syncMetadata',
   APPLICATION_RECORDS: 'applicationRecords',
+  STUDY_CHECKINS: 'studyCheckIns',
 } as const;
 
 export function normalizeUserProfile(profile: UserProfile): UserProfile {
@@ -180,6 +182,7 @@ export class StorageService {
       STORAGE_KEYS.LLM_CONFIG,
       STORAGE_KEYS.SETTINGS,
       STORAGE_KEYS.APPLICATION_RECORDS,
+      STORAGE_KEYS.STUDY_CHECKINS,
     ]);
     const profile = (result[STORAGE_KEYS.USER_PROFILE] as UserProfile | undefined) || null;
     return {
@@ -189,6 +192,7 @@ export class StorageService {
       applicationRecords: normalizeApplicationRecords(
         result[STORAGE_KEYS.APPLICATION_RECORDS] as ApplicationRecord[] | undefined,
       ),
+      studyCheckIns: normalizeStudyCheckIns(result[STORAGE_KEYS.STUDY_CHECKINS]),
     };
   }
 
@@ -209,6 +213,11 @@ export class StorageService {
     if (Object.hasOwn(data, 'applicationRecords')) {
       if (data.applicationRecords === null) removals.push(STORAGE_KEYS.APPLICATION_RECORDS);
       else values[STORAGE_KEYS.APPLICATION_RECORDS] = normalizeApplicationRecords(data.applicationRecords);
+    }
+
+    if (Object.hasOwn(data, 'studyCheckIns')) {
+      if (data.studyCheckIns === null) removals.push(STORAGE_KEYS.STUDY_CHECKINS);
+      else values[STORAGE_KEYS.STUDY_CHECKINS] = normalizeStudyCheckIns(data.studyCheckIns);
     }
 
     // webdavConfig 仅在本地导入时恢复，同步下载不会覆盖本地凭据。
@@ -264,6 +273,17 @@ export class StorageService {
   static async saveApplicationRecords(records: ApplicationRecord[]): Promise<void> {
     await chrome.storage.local.set({
       [STORAGE_KEYS.APPLICATION_RECORDS]: normalizeApplicationRecords(records),
+    });
+  }
+
+  static async getStudyCheckIns(): Promise<StudyCheckIn[]> {
+    const result = await chrome.storage.local.get(STORAGE_KEYS.STUDY_CHECKINS);
+    return normalizeStudyCheckIns(result[STORAGE_KEYS.STUDY_CHECKINS]);
+  }
+
+  static async saveStudyCheckIns(checkIns: StudyCheckIn[]): Promise<void> {
+    await chrome.storage.local.set({
+      [STORAGE_KEYS.STUDY_CHECKINS]: normalizeStudyCheckIns(checkIns),
     });
   }
 

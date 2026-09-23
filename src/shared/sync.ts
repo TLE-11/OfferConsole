@@ -48,6 +48,7 @@ function normalizeBusinessData(data: BackupData): BackupData {
     ...data,
     userProfile,
     applicationRecords: data.applicationRecords ?? [],
+    studyCheckIns: data.studyCheckIns ?? [],
   };
 }
 

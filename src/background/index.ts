@@ -44,6 +44,12 @@ import {
 } from '../services/feishu/syncEngine.ts';
 import type { FeishuConfig } from '../services/feishu/types.ts';
 import {
+  buildStudyCheckInsCsv,
+  createStudyCheckInId,
+  formatLocalDate,
+  type StudyCheckIn,
+} from '../shared/studyCheckIns.ts';
+import {
   buildAnswerGenerationPrompt,
   buildResumeParsingPrompt,
   buildFieldMatchingPrompt,
@@ -422,6 +428,21 @@ export async function handleMessage(
     case 'FEISHU_SYNC_NOW':
       return { success: true, data: await reconcileFeishuNow() };
 
+    case 'GET_STUDY_CHECKINS':
+      return { success: true, data: await StorageService.getStudyCheckIns() };
+
+    case 'CREATE_STUDY_CHECKIN':
+      return await handleCreateStudyCheckIn(message.payload);
+
+    case 'DELETE_STUDY_CHECKIN':
+      return await handleDeleteStudyCheckIn(message.payload.id);
+
+    case 'EXPORT_STUDY_CHECKINS_CSV':
+      return {
+        success: true,
+        data: { csv: buildStudyCheckInsCsv(await StorageService.getStudyCheckIns()) },
+      };
+
     default:
       return {
         success: false,
@@ -441,6 +462,48 @@ async function handleApplicationRecordMutation(
     void scheduleFeishuReconcile();
   }
   return response;
+}
+
+/** 刷题打卡：新增（题目页一键打卡或手动打卡共用入口） */
+async function handleCreateStudyCheckIn(
+  payload: Omit<StudyCheckIn, 'id' | 'createdAt'>,
+): Promise<MessageResponse> {
+  try {
+    if (!payload.problemTitle?.trim()) {
+      return { success: false, error: '题目名称不能为空' };
+    }
+    const checkIns = await StorageService.getStudyCheckIns();
+    const now = new Date();
+    const checkIn: StudyCheckIn = {
+      ...payload,
+      problemTitle: payload.problemTitle.trim(),
+      date: payload.date || formatLocalDate(now),
+      id: createStudyCheckInId(),
+      createdAt: now.toISOString(),
+    };
+    await StorageService.saveStudyCheckIns([checkIn, ...checkIns]);
+    await queueAutoSync('study-checkin-create');
+    return { success: true, data: checkIn };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : '打卡保存失败',
+    };
+  }
+}
+
+async function handleDeleteStudyCheckIn(id: string): Promise<MessageResponse> {
+  try {
+    const checkIns = await StorageService.getStudyCheckIns();
+    await StorageService.saveStudyCheckIns(checkIns.filter(item => item.id !== id));
+    await queueAutoSync('study-checkin-delete');
+    return { success: true };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : '删除失败',
+    };
+  }
 }
 
 /** 飞书连接测试：凭证可用 + 目标表存在 + 预检关键列缺失并给出指引 */

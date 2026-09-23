@@ -121,6 +121,7 @@ export interface BackupData {
   llmConfig: LLMConfig | null;
   settings: SettingsData | null;
   applicationRecords?: ApplicationRecord[] | null;
+  studyCheckIns?: import('./studyCheckIns.ts').StudyCheckIn[] | null;
 }
 
 export interface BackupDocumentV1 {
@@ -169,6 +170,7 @@ export interface BackupSummary {
   hasLLMConfig: boolean;
   hasApiKey: boolean;
   hasWebDAVConfig: boolean;
+  studyCheckInCount: number;
 }
 
 export interface WebDAVConfig {
@@ -415,7 +417,12 @@ export type Message =
   | { type: 'SAVE_FEISHU_CONFIG'; payload: import('../services/feishu/types.ts').FeishuConfig }
   | { type: 'TEST_FEISHU_CONNECTION'; payload: import('../services/feishu/types.ts').FeishuConfig }
   | { type: 'GET_FEISHU_SYNC_STATUS'; payload?: null }
-  | { type: 'FEISHU_SYNC_NOW'; payload?: null };
+  | { type: 'FEISHU_SYNC_NOW'; payload?: null }
+  | { type: 'GET_STUDY_CHECKINS'; payload?: null }
+  | { type: 'CREATE_STUDY_CHECKIN'; payload: Omit<import('./studyCheckIns.ts').StudyCheckIn, 'id' | 'createdAt'> }
+  | { type: 'DELETE_STUDY_CHECKIN'; payload: { id: string } }
+  | { type: 'EXPORT_STUDY_CHECKINS_CSV'; payload?: null }
+  | { type: 'GET_PAGE_PROBLEM'; payload?: null };
 
 export interface MessageResponse<T = any> {
   success: boolean;

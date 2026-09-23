@@ -16,6 +16,7 @@ import { createInfoOverlayController } from './infoOverlay.ts';
 import { runProgressiveFill } from './progressiveFill.ts';
 import { findCustomInformationValue } from '../shared/learnedFields.ts';
 import { getChineseFieldLabel } from '../shared/fieldLabels.ts';
+import { detectProblemFromPage } from '../shared/problemDetector.ts';
 import { buildProfileForResume, resolveResumeSelection } from '../shared/resumes.ts';
 import type {
   DetectedField,
@@ -1151,6 +1152,14 @@ function showSuccessMessage() {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'PING_CONTENT') {
     sendResponse({ success: true, data: { ready: true } });
+    return true;
+  }
+
+  if (message.type === 'GET_PAGE_PROBLEM') {
+    sendResponse({
+      success: true,
+      data: detectProblemFromPage(window.location.href, document.title),
+    });
     return true;
   }
 
