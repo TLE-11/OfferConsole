@@ -9,7 +9,8 @@ lerna-debug.log*
 
 node_modules
 dist
-release
+release/*
+!release/offerconsole-extension.zip
 dist-ssr
 *.local
 mock-resume-samples

@@ -9,7 +9,7 @@ const __dirname = dirname(__filename);
 const projectRoot = join(__dirname, '..');
 const distDir = join(projectRoot, 'dist');
 const releaseDir = join(projectRoot, 'release');
-const zipFile = join(releaseDir, 'job-applymate-extension.zip');
+const zipFile = join(releaseDir, 'offerconsole-extension.zip');
 
 function fail(message) {
   console.error(message);

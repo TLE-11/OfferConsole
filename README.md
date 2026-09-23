@@ -16,14 +16,22 @@
 | 投递记录 | 新建、筛选、排序、行内编辑、CSV 导入导出 |
 | 备份与同步 | JSON 版本化备份；WebDAV 同步（ETag 防冲突，凭据不上远端） |
 
-## 安装（开发者模式）
+## 安装
+
+### 方式一：直接使用（推荐）
+
+下载仓库中的 [`release/offerconsole-extension.zip`](release/offerconsole-extension.zip)，**先解压**，然后打开 `chrome://extensions` → 开启「开发者模式」→「加载已解压的扩展程序」→ 选择**解压出来的目录**（该目录内应能直接看到 `manifest.json`）。
+
+> 浏览器不能直接加载 zip 文件本身，也不能加载源码根目录——源码里的 manifest 指向的是构建产物，未构建时会报「无法加载背景脚本」。
+
+### 方式二：自行构建
 
 ```bash
 pnpm install
 pnpm build
 ```
 
-然后打开 `chrome://extensions` → 开启「开发者模式」→「加载已解压的扩展程序」→ 选择本项目的 `dist/` 目录。
+然后按上面同样的步骤加载本项目的 `dist/` 目录。
 
 ## 使用速览
 
