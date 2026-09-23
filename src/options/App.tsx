@@ -122,6 +122,36 @@ async function preParseInPage(
   }
 }
 
+/**
+ * 把底层技术错误翻译成普通用户能看懂的提示。
+ * 使用者大多不是开发者，不能要求他们开 DevTools 看报错；
+ * 返回空串表示没有匹配的已知场景，界面将直接展示原始错误第一行。
+ */
+function toFriendlyUploadError(rawMessage: string): string {
+  const message = rawMessage.toLowerCase();
+  if (message.includes('超过 30 秒') || message.includes('timed out') || message.includes('timeout')) {
+    return '文件读取超时：可能是扫描版（图片型）文件或文件过大，请改用文字版简历。';
+  }
+  if (message.includes('password') || message.includes('encrypted')) {
+    return '文件已加密：请先解除 PDF 的密码保护后再上传。';
+  }
+  if (
+    message.includes('could not establish connection')
+    || message.includes('extension context invalidated')
+    || message.includes('message port closed')
+    || message.includes('receiving end does not exist')
+  ) {
+    return '扩展后台未响应：请打开 chrome://extensions 页面，将本扩展关闭再开启后重试。';
+  }
+  if (message.includes('pdf')) {
+    return 'PDF 读取失败：文件可能已损坏或是扫描版（图片型），请换用文字版 PDF 或 DOCX。';
+  }
+  if (message.includes('docx') || message.includes('word') || message.includes('.doc')) {
+    return 'Word 文档读取失败：文件可能已损坏，请用 Word/WPS 另存为 DOCX 后重试。';
+  }
+  return '';
+}
+
 function resizeAutoGrowTextarea(element: HTMLTextAreaElement): void {
   const singleLineHeight = 39;
   element.style.height = 'auto';
@@ -409,8 +439,17 @@ function App() {
         }
       } catch (error) {
         console.error('Upload error:', error);
+        const raw = error instanceof Error ? error.message : String(error);
+        // 只保留第一行：解析器抛出的错误常带完整堆栈，直接展示会吓到人
+        const detail = raw.split('\n')[0].trim();
+        const friendly = toFriendlyUploadError(detail);
         setSaveNotice({ type: 'error', text: '上传简历时出错，请稍后重试' });
-        setResumeNotice({ type: 'error', text: '上传简历时出错，请稍后重试。' });
+        setResumeNotice({
+          type: 'error',
+          text: friendly
+            ? `${friendly}\n技术细节（反馈问题时请截图带上）：${detail}`
+            : `上传失败：${detail || '未知错误，请重试'}\n若反复出现，请截图本提示反馈给开发者。`,
+        });
       } finally {
         setParsingResume(false);
         e.target.value = '';

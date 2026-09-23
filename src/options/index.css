@@ -432,6 +432,8 @@ textarea:focus {
   font-size: 13px;
   line-height: 1.6;
   text-align: left;
+  /* 错误提示可能含多行（友好说明 + 技术细节），保留换行符 */
+  white-space: pre-line;
 }
 
 .resume-notice.info {
