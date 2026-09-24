@@ -69,7 +69,7 @@ export class FormDetector {
       'file', 'password', 'reset', 'image', 'range', 'color',
     ].includes(element.type.toLowerCase())) return;
     const isCombobox = element.getAttribute('role') === 'combobox'
-      || Boolean(element.closest('.ant-picker, .el-date-editor, .arco-picker, .semi-datepicker, [data-picker]'));
+      || Boolean(element.closest('.ant-picker, .ant-select, .el-date-editor, .el-select, .arco-picker, .arco-select, .semi-datepicker, .semi-select, [data-picker], [data-select]'));
 
     const visible = element.getClientRects().length > 0
       || (isChoiceControl(element) && getChoiceGroup(element).some(choice => {

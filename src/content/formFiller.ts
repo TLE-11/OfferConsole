@@ -235,20 +235,39 @@ export class FormFiller {
     console.log(`Filling ${fields.length} form fields`);
 
     const educationIndexes: Partial<Record<FieldType, number>> = {};
-    const sectionIndexes: Partial<Record<FillSection, number>> = {};
-    const handledDateElements = await this.fillDateRangeFields(fields, profile, learnedValues);
+    const sectionIndexes: Partial<Record<FillSection, { index: number; hasAnchor: boolean }>> = {};
+    const repeatedSectionIndexes = this.getRepeatedSectionIndexes(fields);
+    const handledDateElements = await this.fillDateRangeFields(
+      fields,
+      profile,
+      learnedValues,
+      repeatedSectionIndexes,
+    );
     const orderedFields = fields.filter(field => !handledDateElements.has(field.element));
 
     for (const field of orderedFields) {
       try {
         const fieldType = field.fieldType as FieldType;
         const educationIndex = this.getEducationIndexForField(field, profile, educationIndexes);
-        const experienceIndex = this.getSectionIndexForField(field, 'experience', sectionIndexes);
-        const projectIndex = this.getSectionIndexForField(field, 'projects', sectionIndexes);
+        const experienceIndex = this.getRepeatedSectionIndex(
+          field,
+          'experience',
+          repeatedSectionIndexes,
+          sectionIndexes,
+        );
+        const projectIndex = this.getRepeatedSectionIndex(
+          field,
+          'projects',
+          repeatedSectionIndexes,
+          sectionIndexes,
+        );
         const signature = this.getFieldSignature(field.element);
         const learnedValue = this.getLearnedValue(learnedValues[signature], profile);
         const value = learnedValue
           || this.getValueForField(fieldType, profile, educationIndex, experienceIndex, projectIndex);
+        // 预览复用、页面预填和 AI 已写入的字段也必须参与索引计算；
+        // 否则第一个经历块的公司字段被过滤后，后续字段会全部回退到第 0 条经历。
+        if (getLogicalControlValue(field.element)) continue;
         if (value !== null && value !== undefined) {
           if (await this.fillField(field.element, value)) {
             this.failures.delete(field.element);
@@ -274,15 +293,16 @@ export class FormFiller {
 
   buildFillPreview(fields: DetectedField[], profile: UserProfile): FillPreviewItem[] {
     const educationIndexes: Partial<Record<FieldType, number>> = {};
-    const sectionIndexes: Partial<Record<FillSection, number>> = {};
+    const sectionIndexes: Partial<Record<FillSection, { index: number; hasAnchor: boolean }>> = {};
+    const repeatedSectionIndexes = this.getRepeatedSectionIndexes(fields);
     return fields.flatMap(field => {
       const fieldType = field.fieldType as FieldType;
       const value = this.getValueForField(
         fieldType,
         profile,
         this.getEducationIndexForField(field, profile, educationIndexes),
-        this.getSectionIndexForField(field, 'experience', sectionIndexes),
-        this.getSectionIndexForField(field, 'projects', sectionIndexes),
+        this.getRepeatedSectionIndex(field, 'experience', repeatedSectionIndexes, sectionIndexes),
+        this.getRepeatedSectionIndex(field, 'projects', repeatedSectionIndexes, sectionIndexes),
       );
       if (!value) return [];
       const element = field.element;
@@ -299,6 +319,7 @@ export class FormFiller {
     fields: DetectedField[],
     profile: UserProfile,
     learnedValues: Record<string, LearnedFieldValue>,
+    repeatedSectionIndexes: Map<DetectedField, number>,
   ): Promise<Set<Element>> {
     const handledElements = new Set<Element>();
     const rangeFields = fields.filter(field => this.isDateRangeField(field.fieldType as FieldType));
@@ -313,7 +334,7 @@ export class FormFiller {
       groups.set(container, [...(groups.get(container) || []), field]);
     }
 
-    const sectionIndexes: Partial<Record<FillSection, number>> = {};
+    const fallbackIndexes: Partial<Record<FillSection, number>> = {};
     const orderedGroups = Array.from(groups.entries()).sort(([a], [b]) => {
       const position = a.compareDocumentPosition(b);
       return position & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1;
@@ -323,8 +344,12 @@ export class FormFiller {
       const section = this.getSectionForElement(container);
       if (section !== 'education' && section !== 'experience') continue;
 
-      const index = sectionIndexes[section] ?? 0;
-      sectionIndexes[section] = index + 1;
+      const fallbackIndex = fallbackIndexes[section] ?? 0;
+      fallbackIndexes[section] = fallbackIndex + 1;
+      const groupIndex = groupFields
+        .map(field => repeatedSectionIndexes.get(field))
+        .find((index): index is number => index !== undefined);
+      const index = groupIndex ?? fallbackIndex;
 
       const source = section === 'education'
         ? profile.education[this.resolveEducationIndexForElement(container, profile, index)]
@@ -442,7 +467,7 @@ export class FormFiller {
 
     return await this.ensureRows({
       moduleKeyword: '实习经历',
-      rowFieldName: ['company', 'company_name', 'employer'],
+      rowFieldName: ['company', 'company_name', 'employer', 'internship_company', 'work_company'],
       targetCount,
     }) || changed;
   }
@@ -521,7 +546,12 @@ export class FormFiller {
     if (!module) return null;
 
     return Array.from(module.querySelectorAll<HTMLButtonElement>('button'))
-      .find(button => /^(添加|新增|add|add another|new)$/i.test((button.textContent || '').trim()) && !button.disabled) || null;
+      .find(button => {
+        const text = (button.textContent || '').trim();
+        return /(?:添加|新增|add(?:\s+another)?|new)/i.test(text)
+          && !/(?:删除|移除|remove|delete)/i.test(text)
+          && !button.disabled;
+      }) || null;
   }
 
   private wait(ms: number): Promise<void> {
@@ -627,22 +657,100 @@ export class FormFiller {
   }
 
   /**
-   * 重复经历块必须以块锚点推进，而不能让公司、职位、描述各自计数。
-   * 否则某一块少了公司或职位字段时，后续描述会被错配到前一条经历。
+   * 为重复经历/项目字段按 DOM 行容器分组。同一容器内的公司、职位、日期和描述
+   * 必须映射到同一条资料，不能再依赖公司字段是否恰好被识别为锚点。
    */
+  private getRepeatedSectionIndexes(fields: DetectedField[]): Map<DetectedField, number> {
+    const indexes = new Map<DetectedField, number>();
+    for (const section of ['experience', 'projects'] as const) {
+      const sectionFields = fields.filter(field => this.isSectionField(field, section));
+      if (sectionFields.length === 0) continue;
+
+      const identities = new Map(sectionFields.map(field => [field, this.getFieldIdentity(field)]));
+      const blocks = new Map<HTMLElement, DetectedField[]>();
+      for (const field of sectionFields) {
+        const block = this.findRepeatedSectionBlock(field, sectionFields, identities);
+        blocks.set(block, [...(blocks.get(block) || []), field]);
+      }
+
+      Array.from(blocks.keys())
+        .sort((a, b) => {
+          const position = a.compareDocumentPosition(b);
+          return position & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1;
+        })
+        .forEach((block, index) => {
+          for (const field of blocks.get(block) || []) indexes.set(field, index);
+        });
+    }
+    return indexes;
+  }
+
+  private getRepeatedSectionIndex(
+    field: DetectedField,
+    section: 'experience' | 'projects',
+    blockIndexes: Map<DetectedField, number>,
+    fallbackIndexes: Partial<Record<FillSection, { index: number; hasAnchor: boolean }>>,
+  ): number | undefined {
+    if (!this.isSectionField(field, section)) return undefined;
+    return blockIndexes.get(field) ?? this.getSectionIndexForField(field, section, fallbackIndexes);
+  }
+
+  private isSectionField(field: DetectedField, section: 'experience' | 'projects'): boolean {
+    const types = section === 'experience' ? EXPERIENCE_FIELD_TYPES : PROJECT_FIELD_TYPES;
+    return types.has(field.fieldType as FieldType);
+  }
+
+  private getFieldIdentity(field: DetectedField): string {
+    const identifiers = FieldMatcher.extractIdentifiers(field.element);
+    return (identifiers.labelText || identifiers.name || identifiers.placeholder || field.fieldType)
+      .replace(/\d+/g, '#')
+      .replace(/\s+/g, '')
+      .toLowerCase();
+  }
+
+  private findRepeatedSectionBlock(
+    field: DetectedField,
+    sectionFields: DetectedField[],
+    identities: Map<DetectedField, string>,
+  ): HTMLElement {
+    let current = field.element.parentElement;
+    let best = field.element.parentElement || document.body;
+    for (let depth = 0; current && current !== document.body && depth < 8; depth += 1, current = current.parentElement) {
+      const members = sectionFields.filter(candidate => current?.contains(candidate.element));
+      const memberCount = members.length;
+      if (memberCount > 14) break;
+      const textLength = (current.textContent || '').replace(/\s+/g, '').length;
+      const memberIdentities = members.map(candidate => identities.get(candidate) || '').filter(Boolean);
+      const crossesRepeatedRows = memberCount >= 4 && new Set(memberIdentities).size < memberIdentities.length;
+      if (crossesRepeatedRows && best !== field.element.parentElement) break;
+      if (memberCount >= 2 && textLength <= 600) best = current;
+      if (current.matches('fieldset, [role="group"], [role="radiogroup"], [class*=row], [class*=entry], [class*=record]') && memberCount >= 2) {
+        best = current;
+      }
+    }
+    return best;
+  }
+
+  /** 当页面无法推断重复行容器时，退回到锚点顺序映射。 */
   private getSectionIndexForField(
     field: DetectedField,
     section: 'experience' | 'projects',
-    sectionIndexes: Partial<Record<FillSection, number>>,
+    sectionIndexes: Partial<Record<FillSection, { index: number; hasAnchor: boolean }>>,
   ): number | undefined {
     const fieldType = field.fieldType as FieldType;
     const types = section === 'experience' ? EXPERIENCE_FIELD_TYPES : PROJECT_FIELD_TYPES;
     if (!types.has(fieldType)) return undefined;
 
     const anchor = section === 'experience' ? FieldType.COMPANY : FieldType.PROJECT_NAME;
-    const current = sectionIndexes[section] ?? 0;
-    if (fieldType === anchor) sectionIndexes[section] = current + 1;
-    return current;
+    const state = sectionIndexes[section] || { index: 0, hasAnchor: false };
+    // 公司/项目名称一般是块内第一个字段。仅在遇到“下一块”的锚点时才推进，
+    // 保证同一块的职位、日期、描述始终读取同一条资料。
+    if (fieldType === anchor) {
+      if (state.hasAnchor) state.index += 1;
+      state.hasAnchor = true;
+    }
+    sectionIndexes[section] = state;
+    return state.index;
   }
 
   private isExhaustedRepeatedField(

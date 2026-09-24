@@ -222,7 +222,7 @@ async function handleAIPageFill(resumeId?: string | null) {
     // 字段先直接填写，避免把整份资料反复发送给模型。
     status.update('正在用本地资料快速填写已识别字段...');
     const locallyMatchedFields = detectedFields.filter(field => (
-      !getControlValue(field.element) && isLikelyApplicationControl(field.element)
+      isLikelyApplicationControl(field.element)
     ));
     await formFiller.fillForm(locallyMatchedFields, fillProfile, learnedValues);
     let scannedFields = collectPageScanFields();
@@ -355,8 +355,9 @@ async function fillSection(
       });
     const learnedUnmatchedCount = await formFiller.fillElementValues(learnedUnmatchedItems);
 
+    // 保留已填写字段以计算重复经历块的 DOM 顺序；FormFiller 会跳过其写入。
     const fieldsToFill = filterFieldsBySection(detectedFields, section)
-      .filter(field => !getControlValue(field.element) && isLikelyApplicationControl(field.element));
+      .filter(field => isLikelyApplicationControl(field.element));
     const selectedResume = resolveResumeSelection(response.data, options.resumeId);
     const fileInputs = formDetector.findFileInputs();
 
@@ -455,7 +456,7 @@ function collectPageScanFields(): ScannedPageField[] {
     const visible = element.getClientRects().length > 0
       || (isChoiceControl(element) && getControlOptions(element).length > 0);
     if (!visible || element.disabled) return false;
-    if ('readOnly' in element && element.readOnly && element.getAttribute('role') !== 'combobox') {
+    if ('readOnly' in element && element.readOnly && !isSelectLikeControl(element)) {
       return false;
     }
     return !getControlValue(element) && isLikelyApplicationControl(element);
@@ -670,6 +671,13 @@ function findLogicalFormBlock(
     }
   }
   return best;
+}
+
+function isSelectLikeControl(element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement): boolean {
+  return element.getAttribute('role') === 'combobox'
+    || Boolean(element.closest(
+      '.ant-picker, .ant-select, .el-date-editor, .el-select, .arco-picker, .arco-select, .semi-datepicker, .semi-select, [data-picker], [data-select]',
+    ));
 }
 
 function getControlValue(element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement): string {
