@@ -55,6 +55,20 @@ test('同一行的出生日期和电话会分别提取', () => {
   assert.equal(personal.email, 'candidate@example.com');
 });
 
+test('微信字段不会收录紧随其后的手机号和邮箱', () => {
+  const personal = NLPHelper.extractLabeledFields(
+    '微信：18463028036 | liwenqiang10_10@163.com',
+  );
+  assert.equal(personal.wechat, undefined);
+});
+
+test('微信字段保留微信号本体并移除手机号和邮箱', () => {
+  const personal = NLPHelper.extractLabeledFields(
+    '微信号：offer_console 18463028036 | liwenqiang10_10@163.com',
+  );
+  assert.equal(personal.wechat, 'offer_console');
+});
+
 test('政治面貌不会被当成姓名', () => {
   const personal = NLPHelper.parseResumeText(RESUME).personal!;
   assert.notEqual(personal.name, '中共党员');

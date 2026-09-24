@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "OfferConsole",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "minimum_chrome_version": "116",
   "description": "你的校招求职控制台：简历库管理、网申表单自动填写、投递进度跟踪",
   "permissions": [

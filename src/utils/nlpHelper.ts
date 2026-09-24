@@ -506,6 +506,14 @@ export class NLPHelper {
           value = value.match(/(?<!\d)(?:\+?86[-\s]?)?(1[3-9]\d{9})(?!\d)/)?.[1] || value;
         } else if (field === 'email') {
           value = value.match(/[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}/)?.[0] || value;
+        } else if (field === 'wechat') {
+          // 简历页眉常把电话、邮箱紧跟在「微信」标签后；它们不是微信号。
+          value = value
+            .replace(/(?<!\d)(?:\+?86[-\s]?)?1[3-9]\d{9}(?!\d)/g, '')
+            .replace(/[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}/g, '')
+            .replace(/^[\s|｜/·,，、;；:：-]+|[\s|｜/·,，、;；:：-]+$/g, '')
+            .trim();
+          if (!value) continue;
         }
         result[field] = value;
       }
