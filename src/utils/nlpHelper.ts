@@ -298,8 +298,9 @@ export class NLPHelper {
     for (const line of lines) {
       const { startDate, endDate, rest } = NLPHelper.extractDateRange(line);
 
-      // 含日期且剩余部分较短 → 视为新条目的头部行
-      if (startDate && rest.length <= 40) {
+      // 含日期且不带句式描述 → 视为新条目的头部行。公司别名、部门和职位
+      // 常被挤在同一行，40 字符会漏掉「北京嘀嘀无限科技发展有限公司（滴滴）- 实习生」这类条目。
+      if (startDate && rest.length <= 100 && !/[。；;]/.test(rest)) {
         flushDescription();
 
         const parts = rest.split(/[|｜·，,、\s]{1,}/).map(p => p.trim()).filter(Boolean);
@@ -341,9 +342,18 @@ export class NLPHelper {
 
     if (parts.length === 0) return { company: '', position: '' };
     if (parts.length === 1) {
-      return orgRegex.test(parts[0]) || !positionRegex.test(parts[0])
-        ? { company: parts[0], position: '' }
-        : { company: '', position: parts[0] };
+      const compactHeader = parts[0];
+      // 常见紧凑写法：公司全称（品牌）- 职位。括号会使公司名不再以“公司”结尾，
+      // 因而不能仅依赖 orgRegex 判断，否则整段会被错误写入职位。
+      const compactMatch = compactHeader.match(
+        /^(.+?(?:公司|集团|有限|股份|中心|研究院|研究所|银行|事务所|工作室|实验室|大学|学院)(?:[（(][^）)]{1,30}[）)])?)\s*[-—–]\s*(.+)$/i,
+      );
+      if (compactMatch && positionRegex.test(compactMatch[2].trim())) {
+        return { company: compactMatch[1].trim(), position: compactMatch[2].trim() };
+      }
+      return orgRegex.test(compactHeader) || !positionRegex.test(compactHeader)
+        ? { company: compactHeader, position: '' }
+        : { company: '', position: compactHeader };
     }
 
     // 机构特征词命中的片段直接作为公司，其余合并成职位

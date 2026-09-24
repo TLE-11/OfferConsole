@@ -161,6 +161,28 @@ test('简历没有解析出项目、经历或技能时使用个人信息页的�
   assert.deepEqual(selected.skills, ['Python']);
 });
 
+test('所选简历漏解析经历时仍保留设置页中未匹配的经历', () => {
+  const parsedProfile = createResumeProfileSnapshot({
+    rawText: '仅解析出滴滴经历',
+    personal: {}, education: [], projects: [], skills: [],
+    experience: [{ company: '北京嘀嘀无限科技发展有限公司（滴滴）', position: '实习生' }],
+  });
+  const profile = {
+    personal: { name: '李文强' }, education: [], projects: [], customInformation: [], skills: [], certifications: [],
+    experience: [
+      { id: 'didi', company: '北京嘀嘀无限科技发展有限公司（滴滴）', position: '实习生', startDate: '2025-06', endDate: '2025-09', description: '全局滴滴描述' },
+      { id: 'kuaishou', company: '快手', position: '算法实习生', startDate: '2024-06', endDate: '2024-09', description: '快手描述' },
+    ],
+    resumes: [createResumeVariant(legacyResume, { id: 'target', parsedProfile })],
+  } as any;
+
+  const selected = buildProfileForResume(profile, 'target');
+  assert.equal(selected.experience.length, 2);
+  assert.equal(selected.experience[0]?.company, '北京嘀嘀无限科技发展有限公司（滴滴）');
+  assert.equal(selected.experience[0]?.description, '全局滴滴描述');
+  assert.equal(selected.experience[1]?.company, '快手');
+});
+
 test('简历包含有效项目时仍使用当前简历的独立项目', () => {
   const parsedProfile = createResumeProfileSnapshot({
     rawText: '项目经历',

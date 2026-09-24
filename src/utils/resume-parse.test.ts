@@ -122,6 +122,21 @@ test('识别不含「公司/集团」的机构名', () => {
   assert.equal(experience[1].position, '数据运营');
 });
 
+test('紧凑的公司别名和职位头部行可正确拆分', () => {
+  const experience = NLPHelper.parseExperienceSection([
+    '北京嘀嘀无限科技发展有限公司（滴滴）-实习生 2025.06-2025.09',
+    '搭建企业内部 AI 知识库平台。',
+    '北京快手科技有限公司（快手）-算法实习生 2024.06-2024.09',
+    '参与推荐算法工程化建设。',
+  ]);
+  assert.equal(experience.length, 2);
+  assert.equal(experience[0]?.company, '北京嘀嘀无限科技发展有限公司（滴滴）');
+  assert.equal(experience[0]?.position, '实习生');
+  assert.match(experience[0]?.description || '', /AI 知识库/);
+  assert.equal(experience[1]?.company, '北京快手科技有限公司（快手）');
+  assert.equal(experience[1]?.position, '算法实习生');
+});
+
 test('机构名含「研究」时不与职位对调', () => {
   const experience = NLPHelper.parseResumeText(RESUME).experience!;
   assert.equal(experience[2].company, '国务院发展研究中心大数据研究院');

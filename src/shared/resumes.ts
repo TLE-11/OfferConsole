@@ -89,14 +89,65 @@ function mergeEducationWithFallback(
   });
 }
 
+function hasRecordContent<T extends { id: string }>(record: T): boolean {
+  return Object.entries(record).some(
+    ([key, value]) => key !== 'id' && typeof value === 'string' && value.trim(),
+  );
+}
+
+function normalizeRecordKeyPart(value: string | undefined): string {
+  return (value || '').trim().toLowerCase().replace(/\s+/g, '');
+}
+
+/**
+ * 简历解析可能漏掉某一条经历；不能因为解析出了一条，就把设置页里的其余条目全部丢弃。
+ * 对同一条记录，优先使用所选简历的内容并用全局资料补齐空字段；未匹配到的全局记录追加在末尾。
+ */
+function mergeParsedRecordsWithFallback<T extends { id: string }>(
+  parsedRecords: T[],
+  fallbackRecords: T[],
+  getKey: (record: T) => string,
+): T[] {
+  const parsedWithContent = parsedRecords.filter(hasRecordContent);
+  if (parsedWithContent.length === 0) return fallbackRecords;
+
+  const consumedFallbackIndexes = new Set<number>();
+  const merged = parsedWithContent.map(parsed => {
+    const parsedKey = getKey(parsed);
+    const fallbackIndex = fallbackRecords.findIndex((fallback, index) => (
+      !consumedFallbackIndexes.has(index) && parsedKey && getKey(fallback) === parsedKey
+    ));
+    if (fallbackIndex < 0) return parsed;
+
+    consumedFallbackIndexes.add(fallbackIndex);
+    const fallback = fallbackRecords[fallbackIndex];
+    const completed = { ...fallback, ...parsed };
+    for (const key of Object.keys(fallback) as Array<keyof T>) {
+      const parsedValue = parsed[key];
+      if (typeof parsedValue !== 'string' || !parsedValue.trim()) {
+        Object.assign(completed, { [key]: fallback[key] });
+      }
+    }
+    completed.id = parsed.id || fallback.id;
+    return completed;
+  });
+
+  return [
+    ...merged,
+    ...fallbackRecords.filter((_, index) => !consumedFallbackIndexes.has(index)),
+  ];
+}
+
+function getExperienceRecordKey(record: ExperienceInfo): string {
+  // 解析器经常先识别公司和职位，日期再由用户在设置页补充；日期不能作为匹配前提。
+  return [record.company, record.position].map(normalizeRecordKeyPart).join('|');
+}
+
 function selectParsedRecordsOrFallback<T extends { id: string }>(
   parsedRecords: T[],
   fallbackRecords: T[],
 ): T[] {
-  const hasContent = parsedRecords.some(record => Object.entries(record).some(
-    ([key, value]) => key !== 'id' && typeof value === 'string' && value.trim(),
-  ));
-  return hasContent ? parsedRecords : fallbackRecords;
+  return parsedRecords.some(hasRecordContent) ? parsedRecords : fallbackRecords;
 }
 
 function selectParsedSkillsOrFallback(parsedSkills: string[], fallbackSkills: string[]): string[] {
@@ -233,7 +284,11 @@ export function buildProfileForResume(
     // 姓名、日期和联系方式等公共资料必须跟随设置页；自我评价仍可随简历版本切换。
     personal: { ...profile.personal, ...parsedPersonal, ...globalPersonal },
     education: mergeEducationWithFallback(selected.parsedProfile.education, profile.education),
-    experience: selectParsedRecordsOrFallback(selected.parsedProfile.experience, profile.experience),
+    experience: mergeParsedRecordsWithFallback(
+      selected.parsedProfile.experience,
+      profile.experience,
+      getExperienceRecordKey,
+    ),
     projects: selectParsedRecordsOrFallback(selected.parsedProfile.projects, profile.projects),
     skills: selectParsedSkillsOrFallback(selected.parsedProfile.skills, profile.skills),
     resume: selected,

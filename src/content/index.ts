@@ -1231,12 +1231,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === 'PREVIEW_FILL') {
-    sendRuntimeMessage<UserProfile>({ type: 'GET_USER_PROFILE' }).then(response => {
+    sendRuntimeMessage<UserProfile>({ type: 'GET_USER_PROFILE' }).then(async response => {
       if (!response.success || !response.data) {
         sendResponse({ success: false, error: '请先保存个人资料' });
         return;
       }
       const previewProfile = buildProfileForResume(response.data, message.payload?.resumeId);
+      // 预览必须与正式填写使用相同的页面结构；否则默认只渲染一行经历的站点
+      // 会让用户误以为后续经历已丢失。
+      await formFiller.prepareDynamicSections(previewProfile, 'all');
       detectedFields = formDetector.detectFields();
       fillPreviewSnapshot = {
         fields: [...detectedFields],
