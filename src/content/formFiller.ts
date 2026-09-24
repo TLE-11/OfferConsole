@@ -427,7 +427,7 @@ export class FormFiller {
     while (current && current !== document.body) {
       const text = (current.textContent || '').replace(/\s+/g, ' ');
       if (/教育经历|学历类型|学校名称|学院|导师|education|university|degree/i.test(text)) return 'education';
-      if (/实习经历|没有实习经历|公司名称|职位名称|work experience|employment|employer/i.test(text)) return 'experience';
+      if (/实习经历|工作经历|没有实习经历|公司名称|职位名称|work experience|employment|employer/i.test(text)) return 'experience';
       if (/项目经历|项目名称|项目角色|project experience|projects/i.test(text)) return 'projects';
       if (/基本信息|手机号码|个人证件|personal information|contact information/i.test(text)) return 'personal';
       current = current.parentElement;
@@ -452,7 +452,9 @@ export class FormFiller {
 
     const internshipModule = this.findModule('实习经历');
     const noExperienceCheckbox = internshipModule
-      ?.querySelector<HTMLInputElement>('input[type="checkbox"]');
+      ? Array.from(internshipModule.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'))
+        .find(checkbox => /没有|暂无|无(?:实习|工作|经历)/.test(this.getCheckboxLabel(checkbox)))
+      : undefined;
     const noExperienceSelected = noExperienceCheckbox?.checked
       || noExperienceCheckbox?.getAttribute('aria-checked') === 'true';
 
@@ -512,7 +514,7 @@ export class FormFiller {
     };
     const terms = aliases[keyword] || [keyword];
     const modules = Array.from(document.querySelectorAll<HTMLElement>(
-      '[class*=applyFormModuleWrapper], section, fieldset, [role="group"]'
+      '[class*=applyFormModuleWrapper], [class*=module], [class*=Module], [class*=card], [class*=Card], [class*=list], [class*=List], section, fieldset, [role="group"]'
     ));
 
     return modules
@@ -520,25 +522,36 @@ export class FormFiller {
       .sort((a, b) => b.querySelectorAll('input, textarea, select, button').length - a.querySelectorAll('input, textarea, select, button').length)[0] || null;
   }
 
-  private countFieldsInModule(moduleKeyword: string, fieldName: string | string[]): number {
+  private countFieldsInModule(moduleKeyword: string, _fieldName: string | string[]): number {
     const module = this.findModule(moduleKeyword);
     if (!module) return 0;
-    const fieldNames = new Set(Array.isArray(fieldName) ? fieldName : [fieldName]);
 
     return Array.from(module.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(
       'input:not([type="hidden"]), textarea, select'
-    )).filter(element => {
-      const container = element.closest<HTMLElement>(
-        '[data-form-field-id], [data-form-field-name], [data-form-field-i18n-name]'
-      );
-      return (
-        fieldNames.has(element.getAttribute('data-form-field-name') || '') ||
-        fieldNames.has(element.getAttribute('data-form-field-id') || '') ||
-        fieldNames.has(element.name) ||
-        fieldNames.has(container?.getAttribute('data-form-field-name') || '') ||
-        fieldNames.has(container?.getAttribute('data-form-field-id') || '')
-      );
-    }).length;
+    )).filter(element => this.getMatchedFieldType(element) === FieldType.COMPANY).length;
+  }
+
+  private getMatchedFieldType(element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement): FieldType {
+    const identifiers = FieldMatcher.extractIdentifiers(element);
+    return FieldMatcher.matchFieldType(
+      identifiers.name,
+      identifiers.id,
+      identifiers.placeholder,
+      identifiers.labelText,
+      identifiers.type,
+      identifiers.autocomplete,
+      identifiers.contextText,
+    ).fieldType;
+  }
+
+  private getCheckboxLabel(checkbox: HTMLInputElement): string {
+    const root = checkbox.getRootNode() as Document | ShadowRoot;
+    return [
+      checkbox.id ? root.querySelector(`label[for="${CSS.escape(checkbox.id)}"]`)?.textContent || '' : '',
+      checkbox.closest('label')?.textContent || '',
+      checkbox.parentElement?.textContent || '',
+      checkbox.getAttribute('aria-label') || '',
+    ].join(' ').replace(/\s+/g, ' ').trim();
   }
 
   private findAddButton(moduleKeyword: string): HTMLButtonElement | null {
@@ -721,7 +734,14 @@ export class FormFiller {
       if (memberCount > 14) break;
       const textLength = (current.textContent || '').replace(/\s+/g, '').length;
       const memberIdentities = members.map(candidate => identities.get(candidate) || '').filter(Boolean);
-      const crossesRepeatedRows = memberCount >= 4 && new Set(memberIdentities).size < memberIdentities.length;
+      const identityCounts = new Map<string, number>();
+      for (const identity of memberIdentities) {
+        identityCounts.set(identity, (identityCounts.get(identity) || 0) + 1);
+      }
+      // 一个“起止时间”标签下通常有两个输入框，单个 identity 的重复不代表跨行。
+      // 只有至少两组字段标签同时重复，才说明当前容器包含多条经历行。
+      const duplicatedGroups = Array.from(identityCounts.values()).filter(count => count > 1).length;
+      const crossesRepeatedRows = memberCount >= 4 && duplicatedGroups >= 2;
       if (crossesRepeatedRows && best !== field.element.parentElement) break;
       if (memberCount >= 2 && textLength <= 600) best = current;
       if (current.matches('fieldset, [role="group"], [role="radiogroup"], [class*=row], [class*=entry], [class*=record]') && memberCount >= 2) {

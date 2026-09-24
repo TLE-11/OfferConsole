@@ -663,7 +663,13 @@ function findLogicalFormBlock(
     if (memberCount > 14) break;
     const textLength = (current.textContent || '').replace(/\s+/g, '').length;
     const identities = members.map(candidate => fieldIdentities.get(candidate) || '').filter(Boolean);
-    const crossesRepeatedRows = memberCount >= 4 && new Set(identities).size < identities.length;
+    const identityCounts = new Map<string, number>();
+    for (const identity of identities) {
+      identityCounts.set(identity, (identityCounts.get(identity) || 0) + 1);
+    }
+    // 同一“起止时间”标签下的两个日期输入是一个字段组，不能误认为两条经历行。
+    const duplicatedGroups = Array.from(identityCounts.values()).filter(count => count > 1).length;
+    const crossesRepeatedRows = memberCount >= 4 && duplicatedGroups >= 2;
     if (crossesRepeatedRows && best !== element.parentElement) break;
     if (memberCount >= 2 && textLength <= 600) best = current;
     if (current.matches('fieldset, [role="group"], [role="radiogroup"], [class*=row], [class*=entry], [class*=record]') && memberCount >= 2) {
