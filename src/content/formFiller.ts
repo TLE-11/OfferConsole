@@ -235,8 +235,7 @@ export class FormFiller {
     console.log(`Filling ${fields.length} form fields`);
 
     const educationIndexes: Partial<Record<FieldType, number>> = {};
-    const experienceIndexes: Partial<Record<FieldType, number>> = {};
-    const projectIndexes: Partial<Record<FieldType, number>> = {};
+    const sectionIndexes: Partial<Record<FillSection, number>> = {};
     const handledDateElements = await this.fillDateRangeFields(fields, profile, learnedValues);
     const orderedFields = fields.filter(field => !handledDateElements.has(field.element));
 
@@ -244,10 +243,11 @@ export class FormFiller {
       try {
         const fieldType = field.fieldType as FieldType;
         const educationIndex = this.getEducationIndexForField(field, profile, educationIndexes);
-        const experienceIndex = this.getNextExperienceIndex(fieldType, experienceIndexes);
-        const projectIndex = this.getNextProjectIndex(fieldType, projectIndexes);
+        const experienceIndex = this.getSectionIndexForField(field, 'experience', sectionIndexes);
+        const projectIndex = this.getSectionIndexForField(field, 'projects', sectionIndexes);
         const signature = this.getFieldSignature(field.element);
-        const value = this.getLearnedValue(learnedValues[signature], profile)
+        const learnedValue = this.getLearnedValue(learnedValues[signature], profile);
+        const value = learnedValue
           || this.getValueForField(fieldType, profile, educationIndex, experienceIndex, projectIndex);
         if (value !== null && value !== undefined) {
           if (await this.fillField(field.element, value)) {
@@ -259,7 +259,7 @@ export class FormFiller {
           } else {
             this.recordFailure(field.element, value, fieldType);
           }
-        } else {
+        } else if (!this.isExhaustedRepeatedField(fieldType, profile, educationIndex, experienceIndex, projectIndex)) {
           // 已经识别出字段语义、但候选人资料中没有答案时也进入补填窗口；
           // 不再只处理 required，避免可见但未标必填的网申字段被静默遗漏。
           this.recordFailure(field.element, '', fieldType);
@@ -274,16 +274,15 @@ export class FormFiller {
 
   buildFillPreview(fields: DetectedField[], profile: UserProfile): FillPreviewItem[] {
     const educationIndexes: Partial<Record<FieldType, number>> = {};
-    const experienceIndexes: Partial<Record<FieldType, number>> = {};
-    const projectIndexes: Partial<Record<FieldType, number>> = {};
+    const sectionIndexes: Partial<Record<FillSection, number>> = {};
     return fields.flatMap(field => {
       const fieldType = field.fieldType as FieldType;
       const value = this.getValueForField(
         fieldType,
         profile,
         this.getEducationIndexForField(field, profile, educationIndexes),
-        this.getNextExperienceIndex(fieldType, experienceIndexes),
-        this.getNextProjectIndex(fieldType, projectIndexes),
+        this.getSectionIndexForField(field, 'experience', sectionIndexes),
+        this.getSectionIndexForField(field, 'projects', sectionIndexes),
       );
       if (!value) return [];
       const element = field.element;
@@ -627,25 +626,36 @@ export class FormFiller {
     return levels.length === 1 ? levels[0].key : null;
   }
 
-  private getNextExperienceIndex(
-    fieldType: FieldType,
-    experienceIndexes: Partial<Record<FieldType, number>>
+  /**
+   * 重复经历块必须以块锚点推进，而不能让公司、职位、描述各自计数。
+   * 否则某一块少了公司或职位字段时，后续描述会被错配到前一条经历。
+   */
+  private getSectionIndexForField(
+    field: DetectedField,
+    section: 'experience' | 'projects',
+    sectionIndexes: Partial<Record<FillSection, number>>,
   ): number | undefined {
-    if (!EXPERIENCE_FIELD_TYPES.has(fieldType)) return undefined;
+    const fieldType = field.fieldType as FieldType;
+    const types = section === 'experience' ? EXPERIENCE_FIELD_TYPES : PROJECT_FIELD_TYPES;
+    if (!types.has(fieldType)) return undefined;
 
-    const index = experienceIndexes[fieldType] ?? 0;
-    experienceIndexes[fieldType] = index + 1;
-    return index;
+    const anchor = section === 'experience' ? FieldType.COMPANY : FieldType.PROJECT_NAME;
+    const current = sectionIndexes[section] ?? 0;
+    if (fieldType === anchor) sectionIndexes[section] = current + 1;
+    return current;
   }
 
-  private getNextProjectIndex(
+  private isExhaustedRepeatedField(
     fieldType: FieldType,
-    projectIndexes: Partial<Record<FieldType, number>>,
-  ): number | undefined {
-    if (!PROJECT_FIELD_TYPES.has(fieldType)) return undefined;
-    const index = projectIndexes[fieldType] ?? 0;
-    projectIndexes[fieldType] = index + 1;
-    return index;
+    profile: UserProfile,
+    educationIndex: number | undefined,
+    experienceIndex: number | undefined,
+    projectIndex: number | undefined,
+  ): boolean {
+    if (EDUCATION_FIELD_TYPES.has(fieldType)) return educationIndex !== undefined && educationIndex >= profile.education.length;
+    if (EXPERIENCE_FIELD_TYPES.has(fieldType)) return experienceIndex !== undefined && experienceIndex >= profile.experience.length;
+    if (PROJECT_FIELD_TYPES.has(fieldType)) return projectIndex !== undefined && projectIndex >= profile.projects.length;
+    return false;
   }
 
   // 根据字段类型获取对应的值

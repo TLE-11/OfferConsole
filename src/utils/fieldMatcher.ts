@@ -24,9 +24,8 @@ export class FieldMatcher {
     const context = normalize(`${contextText} ${labelText} ${name} ${id}`);
     const htmlType = type.toLowerCase();
 
-    // 紧急联系人、家属和监护人属于第三方资料，绝不能仅因出现“电话/姓名”
-    // 就套用候选人本人的 phone/name；留给学习记录或 AI 补填确认。
-    const asksThirdPartyContact = /紧急\s*联系(?:人|方式|电话)?|应急\s*联系(?:人|方式|电话)?|紧急\s*联络(?:人|方式|电话)?|家庭\s*联系(?:人|方式|电话)?|家属\s*联系(?:人|方式|电话)?|监护人|(?:^|\s)(?:emergency\s*contact|guardian)(?:$|\s)/i
+    // 第三方联系人/证明人不属于候选人本人资料，绝不能因出现“电话/姓名”套用个人信息。
+    const asksThirdPartyContact = /紧急\s*联系(?:人|方式|电话)?|应急\s*联系(?:人|方式|电话)?|紧急\s*联络(?:人|方式|电话)?|家庭\s*联系(?:人|方式|电话)?|家属\s*联系(?:人|方式|电话)?|监护人|推荐人|证明人|介绍人|(?:^|\s)(?:emergency\s*contact|guardian|referrer|referee|reference)(?:$|\s)/i
       .test(`${primary} ${context}`);
     if (asksThirdPartyContact) return { fieldType: FieldType.UNKNOWN, confidence: 0 };
 
@@ -44,7 +43,10 @@ export class FieldMatcher {
     const isStart = /开始|起始|入学|(?:^|\s)(?:start|from|begin|since|enroll|enrol|admission)(?:$|\s)/.test(primary);
     const isEnd = /结束|终止|毕业|离职|(?:^|\s)(?:end|to|until|finish|graduation)(?:$|\s)/.test(primary);
 
-    if (projectContext) {
+    // 上下文里出现“项目”并不代表当前字段属于项目经历：美团等页面会把工作描述
+    // 放在包含项目文案的大模块内。字段自身明确指向工作/实习时优先按工作经历处理。
+    const explicitlyWorkField = /工作描述|实习描述|工作内容|实习内容|工作职责|岗位职责|职位职责|公司名称|职位名称|(?:^|\s)(?:work|job|intern|employment|company|position)(?:\s|$)/.test(primary);
+    if (projectContext && !explicitlyWorkField && !workContext) {
       if (/项目名称|(?:^|\s)(?:project\s*name|name)(?:$|\s)/.test(primary)) return { fieldType: FieldType.PROJECT_NAME, confidence: 0.98 };
       if (/项目角色|项目职责|(?:^|\s)(?:project\s*role|role)(?:$|\s)/.test(primary)) return { fieldType: FieldType.PROJECT_ROLE, confidence: 0.98 };
       if (isStart) return { fieldType: FieldType.PROJECT_START_DATE, confidence: 0.96 };

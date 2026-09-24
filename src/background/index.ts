@@ -795,8 +795,8 @@ function isAllowedProfileValue(value: string, allowed: string[]): boolean {
     }
     if (normalized.length < 2 || normalized.length > 30 || compact.length > 30) return false;
     const negative = (text: string) => /^[不非无未否]/.test(text);
-    return negative(compact) === negative(normalized)
-      && (compact.includes(normalized) || normalized.includes(compact));
+    // 仅允许候选资料值是模型回答的精简表达，禁止模型在资料值后拼接公司、职位等额外信息。
+    return negative(compact) === negative(normalized) && compact.includes(normalized);
   })) return true;
   const parts = value.split(/[,，、/|;；\n]+/).map(part => part.trim()).filter(Boolean);
   return parts.length > 1 && parts.every(part => allowed.some(candidate => (

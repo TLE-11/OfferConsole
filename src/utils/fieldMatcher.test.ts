@@ -50,3 +50,19 @@ test('项目经历字段映射到独立项目类型', () => {
   assert.equal(match('start_date', '项目经历'), FieldType.PROJECT_START_DATE);
   assert.equal(match('description', '项目经历'), FieldType.PROJECT_DESCRIPTION);
 });
+
+test('工作描述即使位于含项目文案的模块也保持工作经历语义', () => {
+  assert.equal(match('description', '工作经历 项目经验'), FieldType.DESCRIPTION);
+  assert.equal(match('工作描述', '项目经历'), FieldType.DESCRIPTION);
+});
+
+test('推荐人和证明人字段不会套用候选人本人资料', () => {
+  const refereePhone = FieldMatcher.matchFieldType(
+    'referee_phone', '', '', '推荐人电话', 'tel', '', '推荐人信息',
+  );
+  const referenceName = FieldMatcher.matchFieldType(
+    'reference_name', '', '', '证明人姓名', 'text', 'name', '证明人信息',
+  );
+  assert.equal(refereePhone.fieldType, FieldType.UNKNOWN);
+  assert.equal(referenceName.fieldType, FieldType.UNKNOWN);
+});
